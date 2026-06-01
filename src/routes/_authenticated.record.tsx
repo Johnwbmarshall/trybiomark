@@ -62,6 +62,11 @@ function RecordPage() {
   const [issued, setIssued] = useState<IssuedCertificate | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [verification, setVerification] = useState<{
+    checks: CheckResult[];
+    summary: string;
+    certificateId: string;
+  } | null>(null);
 
   const screenVideoRef = useRef<HTMLVideoElement>(null);
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
@@ -72,6 +77,7 @@ function RecordPage() {
   const getDraftFn = useServerFn(getDraft);
   const deleteDraftFn = useServerFn(deleteDraft);
   const getProfileFn = useServerFn(getMyProfile);
+  const verifyFn = useServerFn(verifySubmission);
 
   const { data: profileData, isLoading: profileLoading } = useQuery({
     queryKey: ["my-profile"],
