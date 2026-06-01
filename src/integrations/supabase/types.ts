@@ -17,7 +17,9 @@ export type Database = {
       certificates: {
         Row: {
           certificate_id: string
+          combined_pdf_path: string | null
           created_at: string
+          document_pdf_path: string | null
           duration_seconds: number
           id: string
           project_name: string
@@ -28,7 +30,9 @@ export type Database = {
         }
         Insert: {
           certificate_id: string
+          combined_pdf_path?: string | null
           created_at?: string
+          document_pdf_path?: string | null
           duration_seconds?: number
           id?: string
           project_name: string
@@ -39,7 +43,9 @@ export type Database = {
         }
         Update: {
           certificate_id?: string
+          combined_pdf_path?: string | null
           created_at?: string
+          document_pdf_path?: string | null
           duration_seconds?: number
           id?: string
           project_name?: string

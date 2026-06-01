@@ -4,8 +4,10 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMediaRecorder } from "@/hooks/useMediaRecorder";
 import { supabase } from "@/integrations/supabase/client";
 import { createCertificate } from "@/lib/certificates.functions";
-import { generateCertificatePdf } from "@/lib/certificate-pdf";
-import { Video, Square, Download, Copy, Check } from "lucide-react";
+import { finalizeCertificate } from "@/lib/certificate-finalize.functions";
+import { generateCombinedPdf } from "@/lib/certificate-pdf";
+import { sendTransactionalEmail } from "@/lib/email/send";
+import { Video, Square, Download, Copy, Check, FileText } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/record")({
   head: () => ({
@@ -19,11 +21,15 @@ interface IssuedCertificate {
   projectName: string;
   createdAt: string;
   ownerEmail: string | null;
+  downloadUrl: string;
 }
+
+const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB
 
 function RecordPage() {
   const recorder = useMediaRecorder();
   const [projectName, setProjectName] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [phase, setPhase] = useState<"setup" | "live" | "uploading" | "done">("setup");
   const [uploadMsg, setUploadMsg] = useState("");
   const [issued, setIssued] = useState<IssuedCertificate | null>(null);
@@ -31,8 +37,8 @@ function RecordPage() {
   const screenVideoRef = useRef<HTMLVideoElement>(null);
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
   const createCertFn = useServerFn(createCertificate);
+  const finalizeFn = useServerFn(finalizeCertificate);
 
-  // Wire previews when streams become available
   useEffect(() => {
     if (recorder.screenStream && screenVideoRef.current) {
       screenVideoRef.current.srcObject = recorder.screenStream;
@@ -42,10 +48,29 @@ function RecordPage() {
     }
   }, [recorder.screenStream, recorder.webcamStream]);
 
+  const handlePdfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    if (!f) return setPdfFile(null);
+    if (f.type !== "application/pdf") {
+      setErrMsg("Please attach a PDF file.");
+      return;
+    }
+    if (f.size > MAX_PDF_BYTES) {
+      setErrMsg("PDF is too large (max 20 MB).");
+      return;
+    }
+    setErrMsg(null);
+    setPdfFile(f);
+  };
+
   const handleStart = async () => {
     setErrMsg(null);
     if (!projectName.trim()) {
       setErrMsg("Give your project a name first.");
+      return;
+    }
+    if (!pdfFile) {
+      setErrMsg("Attach the PDF version of the document you're verifying.");
       return;
     }
     try {
@@ -65,10 +90,12 @@ function RecordPage() {
       const { data: userData } = await supabase.auth.getUser();
       const user = userData.user;
       if (!user) throw new Error("Not signed in.");
+      if (!pdfFile) throw new Error("Missing PDF document.");
 
       const stamp = Date.now();
       const screenPath = `${user.id}/${stamp}-screen.webm`;
       const webcamPath = `${user.id}/${stamp}-webcam.webm`;
+      const originalPdfPath = `${user.id}/${stamp}-original.pdf`;
 
       setUploadMsg("Uploading screen recording…");
       const up1 = await supabase.storage
@@ -82,6 +109,12 @@ function RecordPage() {
         .upload(webcamPath, result.webcamBlob, { contentType: "video/webm" });
       if (up2.error) throw new Error(up2.error.message);
 
+      setUploadMsg("Uploading your document…");
+      const up3 = await supabase.storage
+        .from("documents")
+        .upload(originalPdfPath, pdfFile, { contentType: "application/pdf" });
+      if (up3.error) throw new Error(up3.error.message);
+
       setUploadMsg("Issuing certificate…");
       const cert = await createCertFn({
         data: {
@@ -92,11 +125,56 @@ function RecordPage() {
         },
       });
 
+      setUploadMsg("Appending certificate to your PDF…");
+      const combinedBlob = await generateCombinedPdf(pdfFile, {
+        certificateId: cert.certificateId,
+        projectName: cert.projectName,
+        createdAt: cert.createdAt,
+        ownerEmail: user.email ?? null,
+      });
+
+      const combinedPdfPath = `${user.id}/${stamp}-${cert.certificateId}-combined.pdf`;
+      setUploadMsg("Saving certified PDF…");
+      const up4 = await supabase.storage
+        .from("documents")
+        .upload(combinedPdfPath, combinedBlob, { contentType: "application/pdf" });
+      if (up4.error) throw new Error(up4.error.message);
+
+      setUploadMsg("Generating secure download link…");
+      const final = await finalizeFn({
+        data: {
+          certificateId: cert.certificateId,
+          documentPdfPath: originalPdfPath,
+          combinedPdfPath,
+        },
+      });
+
+      setUploadMsg("Sending email…");
+      try {
+        if (user.email) {
+          await sendTransactionalEmail({
+            templateName: "verification-complete",
+            recipientEmail: user.email,
+            idempotencyKey: `verification-complete-${cert.certificateId}`,
+            templateData: {
+              projectName: cert.projectName,
+              certificateId: cert.certificateId,
+              downloadUrl: final.downloadUrl,
+              verifyUrl: `${window.location.origin}/verify/${cert.certificateId}`,
+            },
+          });
+        }
+      } catch (mailErr) {
+        // Email failures shouldn't block the user — the download is still available on screen.
+        console.error("Failed to send certificate email", mailErr);
+      }
+
       setIssued({
         certificateId: cert.certificateId,
         projectName: cert.projectName,
         createdAt: cert.createdAt,
         ownerEmail: user.email ?? null,
+        downloadUrl: final.downloadUrl,
       });
       setPhase("done");
     } catch (e) {
@@ -115,9 +193,10 @@ function RecordPage() {
         <div className="max-w-xl">
           <h1 className="font-display text-5xl">New session</h1>
           <p className="mt-3 text-muted-foreground">
-            We'll record your screen and webcam together while you work. Stop the session when
-            you're done to receive your certificate.
+            We'll record your screen and webcam together while you work. When you stop, we'll
+            append a signed certificate to your PDF and email it to you.
           </p>
+
           <label className="mt-10 block text-sm font-medium">Project name</label>
           <input
             value={projectName}
@@ -126,6 +205,32 @@ function RecordPage() {
             className="mt-2 w-full rounded-md border border-input bg-card px-4 py-3 outline-none focus:ring-2 focus:ring-ring"
             maxLength={120}
           />
+
+          <label className="mt-6 block text-sm font-medium">
+            Document being verified (PDF)
+          </label>
+          <div className="mt-2 rounded-md border border-dashed border-input bg-card px-4 py-4">
+            <input
+              type="file"
+              accept="application/pdf"
+              onChange={handlePdfChange}
+              className="block w-full text-sm file:mr-4 file:rounded file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground hover:file:bg-accent"
+            />
+            {pdfFile && (
+              <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                <FileText className="h-4 w-4 text-gold" />
+                <span className="truncate">{pdfFile.name}</span>
+                <span className="text-xs">
+                  ({(pdfFile.size / 1024 / 1024).toFixed(2)} MB)
+                </span>
+              </div>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">
+              Required. We'll append the Certificate of Authenticity as the final page of
+              this PDF and email it to you when the session ends. Max 20 MB.
+            </p>
+          </div>
+
           {errMsg && (
             <p className="mt-3 text-sm text-destructive bg-destructive/10 rounded px-3 py-2">
               {errMsg}
@@ -220,30 +325,13 @@ function Success({ issued }: { issued: IssuedCertificate }) {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const downloadPdf = async () => {
-    const blob = await generateCertificatePdf({
-      certificateId: issued.certificateId,
-      projectName: issued.projectName,
-      createdAt: issued.createdAt,
-      ownerEmail: issued.ownerEmail,
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${issued.certificateId}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <main className="mx-auto max-w-2xl px-6 py-16">
       <p className="text-sm uppercase tracking-widest text-gold">Certificate issued</p>
       <h1 className="mt-3 font-display text-5xl">{issued.projectName}</h1>
       <p className="mt-3 text-muted-foreground">
-        Your recording has been lodged in the registry. Use the ID below to verify it on the
-        public site.
+        We've appended the certificate to your PDF and emailed you a secure download link.
+        You can also grab it below.
       </p>
 
       <div className="certificate-paper mt-10 rounded-xl p-8">
@@ -273,13 +361,15 @@ function Success({ issued }: { issued: IssuedCertificate }) {
       </div>
 
       <div className="mt-8 flex flex-wrap gap-3">
-        <button
-          onClick={downloadPdf}
+        <a
+          href={issued.downloadUrl}
+          target="_blank"
+          rel="noreferrer"
           className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
         >
           <Download className="h-4 w-4" />
-          Download Certificate (PDF)
-        </button>
+          Download certified PDF
+        </a>
         <Link
           to="/dashboard"
           className="rounded-md border border-border bg-card px-5 py-2.5 text-sm font-medium hover:bg-secondary"
