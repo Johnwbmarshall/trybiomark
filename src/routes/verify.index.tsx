@@ -5,15 +5,15 @@ import { Search } from "lucide-react";
 export const Route = createFileRoute("/verify/")({
   head: () => ({
     meta: [
-      { title: "Verify a Certificate — ProofOfHuman" },
+      { title: "Verify a Certificate — Bio Mark" },
       {
         name: "description",
-        content: "Enter a ProofOfHuman certificate ID to verify a piece of human-made work.",
+        content: "Enter a Bio Mark certificate ID to verify a piece of human-made work.",
       },
-      { property: "og:title", content: "Verify a Certificate — ProofOfHuman" },
+      { property: "og:title", content: "Verify a Certificate — Bio Mark" },
       {
         property: "og:description",
-        content: "Free public lookup for ProofOfHuman certificates of authenticity.",
+        content: "Free public lookup for Bio Mark certificates of authenticity.",
       },
     ],
   }),

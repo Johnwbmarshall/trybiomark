@@ -9,7 +9,7 @@ import { Video, Square, Download, Copy, Check } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/record")({
   head: () => ({
-    meta: [{ title: "Record a session — ProofOfHuman" }],
+    meta: [{ title: "Record a session — Bio Mark" }],
   }),
   component: RecordPage,
 });

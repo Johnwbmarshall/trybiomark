@@ -4,13 +4,13 @@ import { ShieldCheck, Video, Award, Search } from "lucide-react";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "ProofOfHuman — Certify your work as human-made" },
+      { title: "Bio Mark — Certify your work as human-made" },
       {
         name: "description",
         content:
           "Record your creative process via screen + webcam and receive a verifiable Certificate of Authenticity. Anyone can verify the ID for free.",
       },
-      { property: "og:title", content: "ProofOfHuman" },
+      { property: "og:title", content: "Bio Mark" },
       {
         property: "og:description",
         content: "Verifiable Certificates of Authenticity for human-made digital work.",

@@ -36,7 +36,7 @@ export async function generateCertificatePdf(data: CertificatePdfData): Promise<
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   doc.setTextColor(80, 80, 90);
-  doc.text("PROOFOFHUMAN  ·  HUMAN-PROCESS VERIFICATION REGISTRY", W / 2, 134, { align: "center" });
+  doc.text("BIO MARK  ·  HUMAN-PROCESS VERIFICATION REGISTRY", W / 2, 134, { align: "center" });
 
   // Subject
   doc.setFontSize(13);
@@ -57,7 +57,7 @@ export async function generateCertificatePdf(data: CertificatePdfData): Promise<
     268,
     { align: "center" },
   );
-  doc.text("and lodged with the ProofOfHuman registry on the date below.", W / 2, 286, {
+  doc.text("and lodged with the Bio Mark registry on the date below.", W / 2, 286, {
     align: "center",
   });
 

@@ -5,7 +5,7 @@ import { listMyCertificates } from "@/lib/certificates.functions";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
-    meta: [{ title: "My Certificates — ProofOfHuman" }],
+    meta: [{ title: "My Certificates — Bio Mark" }],
   }),
   component: Dashboard,
 });
