@@ -143,6 +143,39 @@ export type Database = {
         }
         Relationships: []
       }
+      recording_drafts: {
+        Row: {
+          created_at: string
+          duration_seconds: number
+          id: string
+          project_name: string
+          screen_video_path: string
+          updated_at: string
+          user_id: string
+          webcam_video_path: string
+        }
+        Insert: {
+          created_at?: string
+          duration_seconds?: number
+          id?: string
+          project_name: string
+          screen_video_path: string
+          updated_at?: string
+          user_id: string
+          webcam_video_path: string
+        }
+        Update: {
+          created_at?: string
+          duration_seconds?: number
+          id?: string
+          project_name?: string
+          screen_video_path?: string
+          updated_at?: string
+          user_id?: string
+          webcam_video_path?: string
+        }
+        Relationships: []
+      }
       suppressed_emails: {
         Row: {
           created_at: string

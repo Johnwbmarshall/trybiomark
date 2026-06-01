@@ -1,18 +1,25 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 import { useMediaRecorder } from "@/hooks/useMediaRecorder";
 import { supabase } from "@/integrations/supabase/client";
 import { createCertificate } from "@/lib/certificates.functions";
 import { finalizeCertificate } from "@/lib/certificate-finalize.functions";
+import { createDraft, getDraft, deleteDraft } from "@/lib/drafts.functions";
 import { generateCombinedPdf } from "@/lib/certificate-pdf";
 import { sendTransactionalEmail } from "@/lib/email/send";
-import { Video, Square, Download, Copy, Check, FileText } from "lucide-react";
+import { PreflightChecklist } from "@/components/PreflightChecklist";
+import { RecordingControls } from "@/components/RecordingControls";
+import { Video, Download, Copy, Check, FileText, Save } from "lucide-react";
+
+const searchSchema = z.object({
+  draft: z.string().uuid().optional(),
+});
 
 export const Route = createFileRoute("/_authenticated/record")({
-  head: () => ({
-    meta: [{ title: "Record a session — Bio Mark" }],
-  }),
+  head: () => ({ meta: [{ title: "Record a session — Bio Mark" }] }),
+  validateSearch: (search) => searchSchema.parse(search),
   component: RecordPage,
 });
 
@@ -24,29 +31,67 @@ interface IssuedCertificate {
   downloadUrl: string;
 }
 
-interface RecordingResult {
-  screenBlob: Blob;
-  webcamBlob: Blob;
+interface PendingRecording {
+  // Set when local: blobs in memory. Set when from draft: stored paths.
+  screenBlob?: Blob;
+  webcamBlob?: Blob;
+  screenPath?: string;
+  webcamPath?: string;
   durationSeconds: number;
+  draftId?: string;
 }
 
-const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
-type Phase = "setup" | "live" | "attach" | "uploading" | "done";
+type Phase = "setup" | "checklist" | "live" | "attach" | "uploading" | "done";
 
 function RecordPage() {
   const recorder = useMediaRecorder();
+  const navigate = useNavigate();
+  const { draft: draftId } = Route.useSearch();
+
   const [projectName, setProjectName] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [phase, setPhase] = useState<Phase>("setup");
-  const [recording, setRecording] = useState<RecordingResult | null>(null);
+  const [pending, setPending] = useState<PendingRecording | null>(null);
   const [uploadMsg, setUploadMsg] = useState("");
   const [issued, setIssued] = useState<IssuedCertificate | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+
   const screenVideoRef = useRef<HTMLVideoElement>(null);
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
+
   const createCertFn = useServerFn(createCertificate);
   const finalizeFn = useServerFn(finalizeCertificate);
+  const createDraftFn = useServerFn(createDraft);
+  const getDraftFn = useServerFn(getDraft);
+  const deleteDraftFn = useServerFn(deleteDraft);
+
+  // If opened with ?draft=<id>, jump straight to the attach phase using stored paths.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!draftId) return;
+      try {
+        const { draft } = await getDraftFn({ data: { id: draftId } });
+        if (cancelled) return;
+        setProjectName(draft.project_name);
+        setPending({
+          screenPath: draft.screen_video_path,
+          webcamPath: draft.webcam_video_path,
+          durationSeconds: draft.duration_seconds,
+          draftId: draft.id,
+        });
+        setPhase("attach");
+      } catch (e) {
+        setErrMsg(e instanceof Error ? e.message : "Could not load draft.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [draftId, getDraftFn]);
 
   useEffect(() => {
     if (recorder.screenStream && screenVideoRef.current) {
@@ -80,25 +125,97 @@ function RecordPage() {
     }
     try {
       await recorder.start();
-      setPhase("live");
+      setPhase("checklist");
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "Could not start recording.");
     }
   };
 
+  const handleChecklistCancel = async () => {
+    try {
+      await recorder.stop().catch(() => {});
+    } catch {
+      /* noop */
+    }
+    setPhase("setup");
+  };
+
   const handleStop = async () => {
     try {
       const result = await recorder.stop();
-      setRecording(result);
+      setPending({
+        screenBlob: result.screenBlob,
+        webcamBlob: result.webcamBlob,
+        durationSeconds: result.durationSeconds,
+      });
       setPhase("attach");
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "Could not stop recording.");
     }
   };
 
+  // Upload recording blobs to storage (used both for "save as draft" and "submit")
+  const ensureUploaded = async (
+    userId: string,
+    stamp: number,
+  ): Promise<{ screenPath: string; webcamPath: string }> => {
+    if (!pending) throw new Error("No recording");
+    if (pending.screenPath && pending.webcamPath) {
+      return { screenPath: pending.screenPath, webcamPath: pending.webcamPath };
+    }
+    if (!pending.screenBlob || !pending.webcamBlob) {
+      throw new Error("Recording missing");
+    }
+    const screenPath = `${userId}/${stamp}-screen.webm`;
+    const webcamPath = `${userId}/${stamp}-webcam.webm`;
+
+    setUploadMsg("Uploading screen recording…");
+    const up1 = await supabase.storage
+      .from("recordings")
+      .upload(screenPath, pending.screenBlob, { contentType: "video/webm" });
+    if (up1.error) throw new Error(up1.error.message);
+
+    setUploadMsg("Uploading webcam recording…");
+    const up2 = await supabase.storage
+      .from("recordings")
+      .upload(webcamPath, pending.webcamBlob, { contentType: "video/webm" });
+    if (up2.error) throw new Error(up2.error.message);
+
+    return { screenPath, webcamPath };
+  };
+
+  const handleSaveDraft = async () => {
+    if (!pending) return;
+    setErrMsg(null);
+    setSavingDraft(true);
+    try {
+      setPhase("uploading");
+      setUploadMsg("Saving draft…");
+      const { data: userData } = await supabase.auth.getUser();
+      const user = userData.user;
+      if (!user) throw new Error("Not signed in.");
+      const stamp = Date.now();
+      const { screenPath, webcamPath } = await ensureUploaded(user.id, stamp);
+      await createDraftFn({
+        data: {
+          projectName: projectName.trim() || "Untitled",
+          screenVideoPath: screenPath,
+          webcamVideoPath: webcamPath,
+          durationSeconds: pending.durationSeconds,
+        },
+      });
+      navigate({ to: "/dashboard" });
+    } catch (e) {
+      setErrMsg(e instanceof Error ? e.message : "Could not save draft.");
+      setPhase("attach");
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
   const handleFinalize = async () => {
     setErrMsg(null);
-    if (!recording) {
+    if (!pending) {
       setErrMsg("Recording missing. Please try again.");
       return;
     }
@@ -115,21 +232,8 @@ function RecordPage() {
       if (!user) throw new Error("Not signed in.");
 
       const stamp = Date.now();
-      const screenPath = `${user.id}/${stamp}-screen.webm`;
-      const webcamPath = `${user.id}/${stamp}-webcam.webm`;
+      const { screenPath, webcamPath } = await ensureUploaded(user.id, stamp);
       const originalPdfPath = `${user.id}/${stamp}-original.pdf`;
-
-      setUploadMsg("Uploading screen recording…");
-      const up1 = await supabase.storage
-        .from("recordings")
-        .upload(screenPath, recording.screenBlob, { contentType: "video/webm" });
-      if (up1.error) throw new Error(up1.error.message);
-
-      setUploadMsg("Uploading webcam recording…");
-      const up2 = await supabase.storage
-        .from("recordings")
-        .upload(webcamPath, recording.webcamBlob, { contentType: "video/webm" });
-      if (up2.error) throw new Error(up2.error.message);
 
       setUploadMsg("Uploading your document…");
       const up3 = await supabase.storage
@@ -143,7 +247,7 @@ function RecordPage() {
           projectName: projectName.trim(),
           screenVideoPath: screenPath,
           webcamVideoPath: webcamPath,
-          durationSeconds: recording.durationSeconds,
+          durationSeconds: pending.durationSeconds,
         },
       });
 
@@ -187,8 +291,16 @@ function RecordPage() {
           });
         }
       } catch (mailErr) {
-        // Email failures shouldn't block the user — the download is still available on screen.
         console.error("Failed to send certificate email", mailErr);
+      }
+
+      // If this was loaded from a draft, clean it up.
+      if (pending.draftId) {
+        try {
+          await deleteDraftFn({ data: { id: pending.draftId } });
+        } catch (e) {
+          console.warn("Could not delete draft after submission", e);
+        }
       }
 
       setIssued({
@@ -243,8 +355,18 @@ function RecordPage() {
           </button>
           <p className="mt-4 text-xs text-muted-foreground">
             Your browser will ask permission to share screen, camera, and microphone.
+            We'll run a quick checklist before recording starts.
           </p>
         </div>
+      )}
+
+      {phase === "checklist" && (
+        <PreflightChecklist
+          screenStream={recorder.screenStream}
+          webcamStream={recorder.webcamStream}
+          onCancel={handleChecklistCancel}
+          onConfirm={() => setPhase("live")}
+        />
       )}
 
       {phase === "live" && (
@@ -252,8 +374,14 @@ function RecordPage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 text-sm uppercase tracking-widest text-destructive">
-                <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-destructive" />
-                Recording
+                <span
+                  className={`inline-block h-2.5 w-2.5 rounded-full ${
+                    recorder.state === "paused"
+                      ? "bg-muted-foreground"
+                      : "animate-pulse bg-destructive"
+                  }`}
+                />
+                {recorder.state === "paused" ? "Paused" : "Recording"}
               </div>
               <h1 className="mt-2 font-display text-3xl">{projectName}</h1>
             </div>
@@ -261,13 +389,6 @@ function RecordPage() {
               <div className="font-mono text-3xl tabular-nums">
                 {formatTime(recorder.elapsed)}
               </div>
-              <button
-                onClick={handleStop}
-                className="mt-3 inline-flex items-center gap-2 rounded-md bg-destructive px-5 py-2.5 text-sm font-medium text-destructive-foreground hover:opacity-90"
-              >
-                <Square className="h-4 w-4 fill-current" />
-                Stop Recording
-              </button>
             </div>
           </div>
 
@@ -289,18 +410,28 @@ function RecordPage() {
               />
             </div>
           </div>
+
+          <RecordingControls
+            elapsed={recorder.elapsed}
+            paused={recorder.state === "paused"}
+            onPause={recorder.pause}
+            onResume={recorder.resume}
+            onStop={handleStop}
+          />
         </div>
       )}
 
-      {(phase === "attach" || phase === "uploading") && (
+      {(phase === "attach" || phase === "uploading") && pending && (
         <div className="max-w-xl">
-          <p className="text-sm uppercase tracking-widest text-gold">Recording complete</p>
-          <h1 className="mt-2 font-display text-4xl">{projectName}</h1>
+          <p className="text-sm uppercase tracking-widest text-gold">
+            {pending.draftId ? "Draft recording" : "Recording complete"}
+          </p>
+          <h1 className="mt-2 font-display text-4xl">{projectName || "Untitled"}</h1>
           <p className="mt-3 text-muted-foreground">
-            Recorded {formatTime(recording?.durationSeconds ?? 0)}. Now attach the
-            completed PDF version of the document you produced during the session. We'll
-            append the Certificate of Authenticity as the final page and email you a
-            secure download link.
+            Recorded {formatTime(pending.durationSeconds)}. Attach the completed PDF
+            version of the document you produced during the session — we'll append the
+            Certificate of Authenticity as the final page and email you a secure
+            download link. Not ready yet? Save it as a draft and come back later.
           </p>
 
           <label className="mt-8 block text-sm font-medium">
@@ -323,9 +454,7 @@ function RecordPage() {
                 </span>
               </div>
             )}
-            <p className="mt-2 text-xs text-muted-foreground">
-              Required. Max 20 MB.
-            </p>
+            <p className="mt-2 text-xs text-muted-foreground">Required to submit. Max 20 MB.</p>
           </div>
 
           {errMsg && (
@@ -334,13 +463,25 @@ function RecordPage() {
             </p>
           )}
 
-          <button
-            onClick={handleFinalize}
-            disabled={phase === "uploading" || !pdfFile}
-            className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
-          >
-            {phase === "uploading" ? "Processing…" : "Submit for verification"}
-          </button>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              onClick={handleFinalize}
+              disabled={phase === "uploading" || !pdfFile}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+            >
+              {phase === "uploading" && !savingDraft ? "Processing…" : "Submit for verification"}
+            </button>
+            {!pending.draftId && (
+              <button
+                onClick={handleSaveDraft}
+                disabled={phase === "uploading"}
+                className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-5 py-3 text-sm font-medium hover:bg-secondary disabled:opacity-60"
+              >
+                <Save className="h-4 w-4" />
+                {savingDraft ? "Saving…" : "Save as draft"}
+              </button>
+            )}
+          </div>
 
           {phase === "uploading" && (
             <p className="mt-4 text-sm text-muted-foreground">{uploadMsg}</p>
