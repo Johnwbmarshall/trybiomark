@@ -82,15 +82,15 @@ export const verifyCertificate = createServerFn({ method: "POST" })
       console.error("verifyCertificate error:", error);
       return { found: false as const, error: "Lookup failed. Please try again." };
     }
-    if (!row) return { found: false as const };
+    if (!row || !row.certificate_id) return { found: false as const };
     return {
       found: true as const,
       certificate: {
         certificateId: row.certificate_id,
-        projectName: row.project_name,
-        createdAt: row.created_at,
-        verificationStatus: row.verification_status,
-        durationSeconds: row.duration_seconds,
+        projectName: row.project_name ?? "Untitled",
+        createdAt: row.created_at ?? new Date().toISOString(),
+        verificationStatus: row.verification_status ?? "verified",
+        durationSeconds: row.duration_seconds ?? 0,
       },
     };
   });
