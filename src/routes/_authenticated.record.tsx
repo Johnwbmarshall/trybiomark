@@ -47,7 +47,7 @@ interface PendingRecording {
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
-type Phase = "setup" | "checklist" | "live" | "attach" | "uploading" | "done";
+type Phase = "setup" | "checklist" | "live" | "attach" | "uploading" | "done" | "rejected";
 
 function RecordPage() {
   const recorder = useMediaRecorder();
