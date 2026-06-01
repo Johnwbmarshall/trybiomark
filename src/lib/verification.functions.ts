@@ -253,7 +253,8 @@ Below are: SELFIE (1 image), then WEBCAM frames in chronological order, then SCR
       .from("certificates")
       .update({
         verification_status: status,
-        verification_notes: notes,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        verification_notes: notes as any,
       })
       .eq("certificate_id", data.certificateId)
       .eq("user_id", userId);
