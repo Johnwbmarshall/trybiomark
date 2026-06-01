@@ -16,6 +16,7 @@ import { Route as VerifyIndexRouteImport } from './routes/verify.index'
 import { Route as VerifyIdRouteImport } from './routes/verify.$id'
 import { Route as AuthenticatedRecordRouteImport } from './routes/_authenticated.record'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated.dashboard'
+import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -37,9 +38,9 @@ const VerifyIndexRoute = VerifyIndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const VerifyIdRoute = VerifyIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => VerifyRoute,
+  id: '/verify/$id',
+  path: '/verify/$id',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRecordRoute = AuthenticatedRecordRouteImport.update({
   id: '/record',
@@ -51,6 +52,12 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const LovableEmailQueueProcessRoute =
+  LovableEmailQueueProcessRouteImport.update({
+    id: '/lovable/email/queue/process',
+    path: '/lovable/email/queue/process',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/record': typeof AuthenticatedRecordRoute
   '/verify/$id': typeof VerifyIdRoute
   '/verify/': typeof VerifyIndexRoute
+  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -67,6 +75,7 @@ export interface FileRoutesByTo {
   '/record': typeof AuthenticatedRecordRoute
   '/verify/$id': typeof VerifyIdRoute
   '/verify': typeof VerifyIndexRoute
+  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,6 +86,7 @@ export interface FileRoutesById {
   '/_authenticated/record': typeof AuthenticatedRecordRoute
   '/verify/$id': typeof VerifyIdRoute
   '/verify/': typeof VerifyIndexRoute
+  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -87,8 +97,16 @@ export interface FileRouteTypes {
     | '/record'
     | '/verify/$id'
     | '/verify/'
+    | '/lovable/email/queue/process'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/dashboard' | '/record' | '/verify/$id' | '/verify'
+  to:
+    | '/'
+    | '/login'
+    | '/dashboard'
+    | '/record'
+    | '/verify/$id'
+    | '/verify'
+    | '/lovable/email/queue/process'
   id:
     | '__root__'
     | '/'
@@ -98,13 +116,16 @@ export interface FileRouteTypes {
     | '/_authenticated/record'
     | '/verify/$id'
     | '/verify/'
+    | '/lovable/email/queue/process'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
+  VerifyIdRoute: typeof VerifyIdRoute
   VerifyIndexRoute: typeof VerifyIndexRoute
+  LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -139,10 +160,10 @@ declare module '@tanstack/react-router' {
     }
     '/verify/$id': {
       id: '/verify/$id'
-      path: '/$id'
+      path: '/verify/$id'
       fullPath: '/verify/$id'
       preLoaderRoute: typeof VerifyIdRouteImport
-      parentRoute: typeof VerifyRoute
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/record': {
       id: '/_authenticated/record'
@@ -157,6 +178,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/dashboard'
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/lovable/email/queue/process': {
+      id: '/lovable/email/queue/process'
+      path: '/lovable/email/queue/process'
+      fullPath: '/lovable/email/queue/process'
+      preLoaderRoute: typeof LovableEmailQueueProcessRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -179,18 +207,10 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
+  VerifyIdRoute: VerifyIdRoute,
   VerifyIndexRoute: VerifyIndexRoute,
+  LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
