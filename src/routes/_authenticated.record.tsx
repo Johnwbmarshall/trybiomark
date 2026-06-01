@@ -383,6 +383,72 @@ function RecordPage() {
     return <Success issued={issued} />;
   }
 
+  if (phase === "rejected" && verification) {
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-12">
+        <p className="text-sm uppercase tracking-widest text-destructive">
+          Verification failed
+        </p>
+        <h1 className="mt-2 font-display text-4xl">
+          We couldn't issue this certificate
+        </h1>
+        <p className="mt-3 text-muted-foreground">
+          Every Bio Mark certificate has to clear six automated integrity checks
+          powered by Gemini. One or more checks didn't pass for this submission,
+          so no certificate was issued and no email was sent.
+        </p>
+        {verification.summary && (
+          <p className="mt-3 rounded-md bg-card border border-border p-3 text-sm">
+            {verification.summary}
+          </p>
+        )}
+        <ul className="mt-8 space-y-3">
+          {verification.checks.map((c) => (
+            <li
+              key={c.key}
+              className="rounded-lg border border-border bg-card p-4"
+            >
+              <div className="flex items-start gap-3">
+                {c.passed ? (
+                  <Check className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
+                ) : (
+                  <X className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+                )}
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium">{c.label}</p>
+                    <span className="text-xs uppercase tracking-widest text-muted-foreground">
+                      {c.confidence} confidence
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{c.reason}</p>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-8 flex gap-2">
+          <button
+            onClick={() => {
+              setVerification(null);
+              setPhase("attach");
+            }}
+            className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm hover:bg-accent"
+          >
+            <FileText className="h-4 w-4" /> Try a different PDF
+          </button>
+          <Link
+            to="/dashboard"
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            <ShieldCheck className="h-4 w-4" /> Back to dashboard
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+
   return (
     <main className="mx-auto max-w-5xl px-6 py-12">
       {phase === "setup" && (
