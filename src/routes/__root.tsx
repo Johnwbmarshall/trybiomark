@@ -87,21 +87,21 @@ export const Route = createRootRouteWithContext<{
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "ProofOfHuman — Certify your work as human-made" },
+      { title: "Bio Mark — Certify your work as human-made" },
       {
         name: "description",
         content:
           "Record your creative process via screen + webcam and receive a verifiable Certificate of Authenticity. Anyone can verify it for free.",
       },
-      { name: "author", content: "ProofOfHuman" },
-      { property: "og:title", content: "ProofOfHuman — Certify your work as human-made" },
+      { name: "author", content: "Bio Mark" },
+      { property: "og:title", content: "Bio Mark — Certify your work as human-made" },
       {
         property: "og:description",
         content: "Verifiable Certificates of Authenticity for human-made digital work.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:title", content: "ProofOfHuman — Certify your work as human-made" },
+      { name: "twitter:title", content: "Bio Mark — Certify your work as human-made" },
       { name: "description", content: "Records digital creation processes via webcam and screen recording to generate verifiable proof of human authorship." },
       { property: "og:description", content: "Records digital creation processes via webcam and screen recording to generate verifiable proof of human authorship." },
       { name: "twitter:description", content: "Records digital creation processes via webcam and screen recording to generate verifiable proof of human authorship." },
@@ -177,7 +177,7 @@ function SiteHeader() {
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link to="/" className="flex items-center gap-2">
           <span className="inline-block h-2.5 w-2.5 rounded-full bg-gold" />
-          <span className="font-display text-xl tracking-tight">ProofOfHuman</span>
+          <span className="font-display text-xl tracking-tight">Bio Mark</span>
         </Link>
         <nav className="flex items-center gap-1 text-sm">
           <Link to="/verify" className="px-3 py-1.5 rounded hover:bg-secondary">

@@ -7,7 +7,7 @@ import { ShieldCheck, ShieldX } from "lucide-react";
 export const Route = createFileRoute("/verify/$id")({
   head: ({ params }) => ({
     meta: [
-      { title: `Verify ${params.id} — ProofOfHuman` },
+      { title: `Verify ${params.id} — Bio Mark` },
       {
         name: "description",
         content: `Public verification page for certificate ${params.id}.`,
