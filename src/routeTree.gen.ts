@@ -9,19 +9,14 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as VerifyIndexRouteImport } from './routes/verify.index'
 import { Route as VerifyIdRouteImport } from './routes/verify.$id'
 import { Route as AuthenticatedRecordRouteImport } from './routes/_authenticated.record'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated.dashboard'
 
-const VerifyRoute = VerifyRouteImport.update({
-  id: '/verify',
-  path: '/verify',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -34,6 +29,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyIndexRoute = VerifyIndexRouteImport.update({
+  id: '/verify/',
+  path: '/verify/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const VerifyIdRoute = VerifyIdRouteImport.update({
@@ -55,67 +55,60 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/verify': typeof VerifyRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/record': typeof AuthenticatedRecordRoute
   '/verify/$id': typeof VerifyIdRoute
+  '/verify/': typeof VerifyIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/verify': typeof VerifyRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/record': typeof AuthenticatedRecordRoute
   '/verify/$id': typeof VerifyIdRoute
+  '/verify': typeof VerifyIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
-  '/verify': typeof VerifyRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/record': typeof AuthenticatedRecordRoute
   '/verify/$id': typeof VerifyIdRoute
+  '/verify/': typeof VerifyIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/login'
-    | '/verify'
     | '/dashboard'
     | '/record'
     | '/verify/$id'
+    | '/verify/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/verify' | '/dashboard' | '/record' | '/verify/$id'
+  to: '/' | '/login' | '/dashboard' | '/record' | '/verify/$id' | '/verify'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/login'
-    | '/verify'
     | '/_authenticated/dashboard'
     | '/_authenticated/record'
     | '/verify/$id'
+    | '/verify/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
-  VerifyRoute: typeof VerifyRouteWithChildren
+  VerifyIndexRoute: typeof VerifyIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/verify': {
-      id: '/verify'
-      path: '/verify'
-      fullPath: '/verify'
-      preLoaderRoute: typeof VerifyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -135,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify/': {
+      id: '/verify/'
+      path: '/verify'
+      fullPath: '/verify/'
+      preLoaderRoute: typeof VerifyIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/verify/$id': {
@@ -175,22 +175,11 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
-interface VerifyRouteChildren {
-  VerifyIdRoute: typeof VerifyIdRoute
-}
-
-const VerifyRouteChildren: VerifyRouteChildren = {
-  VerifyIdRoute: VerifyIdRoute,
-}
-
-const VerifyRouteWithChildren =
-  VerifyRoute._addFileChildren(VerifyRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
-  VerifyRoute: VerifyRouteWithChildren,
+  VerifyIndexRoute: VerifyIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

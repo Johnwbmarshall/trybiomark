@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Search } from "lucide-react";
 
-export const Route = createFileRoute("/verify")({
+export const Route = createFileRoute("/verify/")({
   head: () => ({
     meta: [
       { title: "Verify a Certificate — ProofOfHuman" },
