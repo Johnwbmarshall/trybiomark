@@ -345,6 +345,28 @@ function RecordPage() {
             append a signed certificate to it and email it to you.
           </p>
 
+          {!profileLoading && !hasSelfie && (
+            <div className="mt-8 rounded-xl border border-gold/40 bg-gold/5 p-5">
+              <div className="flex items-start gap-3">
+                <Camera className="h-5 w-5 mt-0.5 text-gold" />
+                <div>
+                  <p className="font-medium">Add a verification selfie first</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Before your first recording we capture a one-time selfie that
+                    stays on your profile. It's used to confirm the same person
+                    appears in every certified session.
+                  </p>
+                  <Link
+                    to="/profile"
+                    className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                  >
+                    <Camera className="h-4 w-4" /> Take selfie
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
           <label className="mt-10 block text-sm font-medium">Project name</label>
           <input
             value={projectName}
@@ -352,6 +374,7 @@ function RecordPage() {
             placeholder="e.g. Album cover — Aurora"
             className="mt-2 w-full rounded-md border border-input bg-card px-4 py-3 outline-none focus:ring-2 focus:ring-ring"
             maxLength={120}
+            disabled={!hasSelfie}
           />
 
           {errMsg && (
@@ -361,7 +384,8 @@ function RecordPage() {
           )}
           <button
             onClick={handleStart}
-            className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
+            disabled={!hasSelfie}
+            className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Video className="h-4 w-4" />
             Start Session
