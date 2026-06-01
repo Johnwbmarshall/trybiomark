@@ -61,14 +61,22 @@ function ProfilePage() {
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
       setStreamReady(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not access camera.");
     }
   };
+
+  // Attach the live stream to the <video> AFTER it mounts (streamReady toggles it on).
+  useEffect(() => {
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!streamReady || !video || !stream) return;
+    video.srcObject = stream;
+    const tryPlay = () => video.play().catch(() => {});
+    if (video.readyState >= 1) tryPlay();
+    else video.onloadedmetadata = tryPlay;
+  }, [streamReady]);
 
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());

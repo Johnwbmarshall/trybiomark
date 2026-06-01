@@ -111,13 +111,14 @@ function RecordPage() {
   }, [draftId, getDraftFn]);
 
   useEffect(() => {
-    if (recorder.screenStream && screenVideoRef.current) {
-      screenVideoRef.current.srcObject = recorder.screenStream;
-    }
-    if (recorder.webcamStream && webcamVideoRef.current) {
-      webcamVideoRef.current.srcObject = recorder.webcamStream;
-    }
-  }, [recorder.screenStream, recorder.webcamStream]);
+    const attach = (el: HTMLVideoElement | null, stream: MediaStream | null) => {
+      if (!el || !stream) return;
+      if (el.srcObject !== stream) el.srcObject = stream;
+      el.play().catch(() => {});
+    };
+    attach(screenVideoRef.current, recorder.screenStream);
+    attach(webcamVideoRef.current, recorder.webcamStream);
+  }, [recorder.screenStream, recorder.webcamStream, phase]);
 
   const handlePdfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
