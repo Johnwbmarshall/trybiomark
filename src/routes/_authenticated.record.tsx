@@ -7,11 +7,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { createCertificate } from "@/lib/certificates.functions";
 import { finalizeCertificate } from "@/lib/certificate-finalize.functions";
 import { createDraft, getDraft, deleteDraft } from "@/lib/drafts.functions";
+import { getMyProfile } from "@/lib/profile.functions";
 import { generateCombinedPdf } from "@/lib/certificate-pdf";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { PreflightChecklist } from "@/components/PreflightChecklist";
 import { RecordingControls } from "@/components/RecordingControls";
-import { Video, Download, Copy, Check, FileText, Save } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Video, Download, Copy, Check, FileText, Save, Camera } from "lucide-react";
 
 const searchSchema = z.object({
   draft: z.string().uuid().optional(),
