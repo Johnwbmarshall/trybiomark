@@ -25,6 +25,7 @@ export type Database = {
           project_name: string
           screen_video_path: string | null
           user_id: string
+          verification_notes: Json | null
           verification_status: string
           webcam_video_path: string | null
         }
@@ -38,6 +39,7 @@ export type Database = {
           project_name: string
           screen_video_path?: string | null
           user_id: string
+          verification_notes?: Json | null
           verification_status?: string
           webcam_video_path?: string | null
         }
@@ -51,6 +53,7 @@ export type Database = {
           project_name?: string
           screen_video_path?: string | null
           user_id?: string
+          verification_notes?: Json | null
           verification_status?: string
           webcam_video_path?: string | null
         }
