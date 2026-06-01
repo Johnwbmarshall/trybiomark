@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type RecorderState = "idle" | "requesting" | "recording" | "stopped" | "error";
+export type RecorderState =
+  | "idle"
+  | "requesting"
+  | "recording"
+  | "paused"
+  | "stopped"
+  | "error";
 
 export interface RecordingResult {
   screenBlob: Blob;
@@ -19,7 +25,8 @@ export function useMediaRecorder() {
   const webcamRecorderRef = useRef<MediaRecorder | null>(null);
   const screenChunksRef = useRef<Blob[]>([]);
   const webcamChunksRef = useRef<Blob[]>([]);
-  const startedAtRef = useRef<number>(0);
+  const accumulatedRef = useRef<number>(0); // total recorded ms before current run
+  const runStartedAtRef = useRef<number>(0); // start of the current (un-paused) run
   const tickRef = useRef<number | null>(null);
 
   const cleanup = useCallback(() => {
@@ -34,6 +41,9 @@ export function useMediaRecorder() {
   }, []);
 
   useEffect(() => () => cleanup(), [cleanup]);
+
+  const currentElapsedMs = () =>
+    accumulatedRef.current + (runStartedAtRef.current ? Date.now() - runStartedAtRef.current : 0);
 
   const start = useCallback(async () => {
     setError(null);
@@ -50,10 +60,9 @@ export function useMediaRecorder() {
       screenStreamRef.current = screen;
       webcamStreamRef.current = webcam;
 
-      const mime =
-        MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-          ? "video/webm;codecs=vp9,opus"
-          : "video/webm";
+      const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+        ? "video/webm;codecs=vp9,opus"
+        : "video/webm";
 
       screenChunksRef.current = [];
       webcamChunksRef.current = [];
@@ -64,10 +73,9 @@ export function useMediaRecorder() {
       screenRec.ondataavailable = (e) => e.data.size && screenChunksRef.current.push(e.data);
       webcamRec.ondataavailable = (e) => e.data.size && webcamChunksRef.current.push(e.data);
 
-      // If user clicks the browser's native "Stop sharing" button, end the session.
       screen.getVideoTracks()[0].onended = () => {
-        if (screenRec.state === "recording") screenRec.stop();
-        if (webcamRec.state === "recording") webcamRec.stop();
+        if (screenRec.state !== "inactive") screenRec.stop();
+        if (webcamRec.state !== "inactive") webcamRec.stop();
       };
 
       screenRecorderRef.current = screenRec;
@@ -76,10 +84,11 @@ export function useMediaRecorder() {
       screenRec.start(1000);
       webcamRec.start(1000);
 
-      startedAtRef.current = Date.now();
+      accumulatedRef.current = 0;
+      runStartedAtRef.current = Date.now();
       setElapsed(0);
       tickRef.current = window.setInterval(() => {
-        setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000));
+        setElapsed(Math.floor(currentElapsedMs() / 1000));
       }, 500);
 
       setState("recording");
@@ -93,6 +102,27 @@ export function useMediaRecorder() {
     }
   }, [cleanup]);
 
+  const pause = useCallback(() => {
+    const s = screenRecorderRef.current;
+    const w = webcamRecorderRef.current;
+    if (!s || !w || s.state !== "recording") return;
+    s.pause();
+    w.pause();
+    accumulatedRef.current += Date.now() - runStartedAtRef.current;
+    runStartedAtRef.current = 0;
+    setState("paused");
+  }, []);
+
+  const resume = useCallback(() => {
+    const s = screenRecorderRef.current;
+    const w = webcamRecorderRef.current;
+    if (!s || !w || s.state !== "paused") return;
+    s.resume();
+    w.resume();
+    runStartedAtRef.current = Date.now();
+    setState("recording");
+  }, []);
+
   const stop = useCallback((): Promise<RecordingResult> => {
     return new Promise((resolve, reject) => {
       const screenRec = screenRecorderRef.current;
@@ -101,7 +131,8 @@ export function useMediaRecorder() {
         reject(new Error("Recorder not active"));
         return;
       }
-      const duration = Math.max(1, Math.floor((Date.now() - startedAtRef.current) / 1000));
+      const totalMs = currentElapsedMs();
+      const duration = Math.max(1, Math.floor(totalMs / 1000));
       let pending = 2;
       const done = () => {
         pending -= 1;
@@ -109,6 +140,8 @@ export function useMediaRecorder() {
           const screenBlob = new Blob(screenChunksRef.current, { type: "video/webm" });
           const webcamBlob = new Blob(webcamChunksRef.current, { type: "video/webm" });
           cleanup();
+          accumulatedRef.current = 0;
+          runStartedAtRef.current = 0;
           setState("stopped");
           resolve({ screenBlob, webcamBlob, durationSeconds: duration });
         }
@@ -127,6 +160,8 @@ export function useMediaRecorder() {
     error,
     elapsed,
     start,
+    pause,
+    resume,
     stop,
     screenStream: screenStreamRef.current,
     webcamStream: webcamStreamRef.current,
