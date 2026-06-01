@@ -88,9 +88,10 @@ export async function extractPdfPageImages(
   // Lazy import — pdfjs is heavy and only needed during verification.
   const pdfjs = await import("pdfjs-dist");
   // Inline worker to avoid worker-url configuration headaches.
-  // @ts-expect-error worker file exists in dist
-  const workerSrc = (await import("pdfjs-dist/build/pdf.worker.mjs?url")).default;
-  pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+  const workerMod = await import(
+    /* @vite-ignore */ "pdfjs-dist/build/pdf.worker.mjs?url"
+  );
+  pdfjs.GlobalWorkerOptions.workerSrc = (workerMod as { default: string }).default;
 
   const ab = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: ab }).promise;
