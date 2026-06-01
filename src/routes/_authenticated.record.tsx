@@ -69,6 +69,13 @@ function RecordPage() {
   const createDraftFn = useServerFn(createDraft);
   const getDraftFn = useServerFn(getDraft);
   const deleteDraftFn = useServerFn(deleteDraft);
+  const getProfileFn = useServerFn(getMyProfile);
+
+  const { data: profileData, isLoading: profileLoading } = useQuery({
+    queryKey: ["my-profile"],
+    queryFn: () => getProfileFn(),
+  });
+  const hasSelfie = Boolean(profileData?.profile?.selfie_path);
 
   // If opened with ?draft=<id>, jump straight to the attach phase using stored paths.
   useEffect(() => {
