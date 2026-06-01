@@ -245,11 +245,15 @@ Below are: SELFIE (1 image), then WEBCAM frames in chronological order, then SCR
     const status = allPassed ? "verified" : "rejected";
 
     // 4. Persist verdict on the certificate row.
+    const notes = {
+      checks: checks.map((c) => ({ ...c })),
+      summary: parsed.summary ?? "",
+    } as unknown as Record<string, unknown>;
     const { error: updErr } = await supabase
       .from("certificates")
       .update({
         verification_status: status,
-        verification_notes: { checks, summary: parsed.summary ?? "" },
+        verification_notes: notes,
       })
       .eq("certificate_id", data.certificateId)
       .eq("user_id", userId);
