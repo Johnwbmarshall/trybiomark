@@ -103,7 +103,7 @@ async function buildCertificatePdfBytes(data: CertificatePdfData): Promise<Uint8
 
 export async function generateCertificatePdf(data: CertificatePdfData): Promise<Blob> {
   const bytes = await buildCertificatePdfBytes(data);
-  return new Blob([bytes], { type: "application/pdf" });
+  return new Blob([bytes as BlobPart], { type: "application/pdf" });
 }
 
 /**
@@ -126,5 +126,5 @@ export async function generateCombinedPdf(
   for (const p of certPages) merged.addPage(p);
 
   const out = await merged.save();
-  return new Blob([out], { type: "application/pdf" });
+  return new Blob([out as BlobPart], { type: "application/pdf" });
 }
