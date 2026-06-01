@@ -7,11 +7,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { createCertificate } from "@/lib/certificates.functions";
 import { finalizeCertificate } from "@/lib/certificate-finalize.functions";
 import { createDraft, getDraft, deleteDraft } from "@/lib/drafts.functions";
+import { getMyProfile } from "@/lib/profile.functions";
 import { generateCombinedPdf } from "@/lib/certificate-pdf";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { PreflightChecklist } from "@/components/PreflightChecklist";
 import { RecordingControls } from "@/components/RecordingControls";
-import { Video, Download, Copy, Check, FileText, Save } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Video, Download, Copy, Check, FileText, Save, Camera } from "lucide-react";
 
 const searchSchema = z.object({
   draft: z.string().uuid().optional(),
@@ -67,6 +69,13 @@ function RecordPage() {
   const createDraftFn = useServerFn(createDraft);
   const getDraftFn = useServerFn(getDraft);
   const deleteDraftFn = useServerFn(deleteDraft);
+  const getProfileFn = useServerFn(getMyProfile);
+
+  const { data: profileData, isLoading: profileLoading } = useQuery({
+    queryKey: ["my-profile"],
+    queryFn: () => getProfileFn(),
+  });
+  const hasSelfie = Boolean(profileData?.profile?.selfie_path);
 
   // If opened with ?draft=<id>, jump straight to the attach phase using stored paths.
   useEffect(() => {
@@ -119,6 +128,10 @@ function RecordPage() {
 
   const handleStart = async () => {
     setErrMsg(null);
+    if (!hasSelfie) {
+      setErrMsg("Add a verification selfie to your profile before recording.");
+      return;
+    }
     if (!projectName.trim()) {
       setErrMsg("Give your project a name first.");
       return;
@@ -332,6 +345,28 @@ function RecordPage() {
             append a signed certificate to it and email it to you.
           </p>
 
+          {!profileLoading && !hasSelfie && (
+            <div className="mt-8 rounded-xl border border-gold/40 bg-gold/5 p-5">
+              <div className="flex items-start gap-3">
+                <Camera className="h-5 w-5 mt-0.5 text-gold" />
+                <div>
+                  <p className="font-medium">Add a verification selfie first</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Before your first recording we capture a one-time selfie that
+                    stays on your profile. It's used to confirm the same person
+                    appears in every certified session.
+                  </p>
+                  <Link
+                    to="/profile"
+                    className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                  >
+                    <Camera className="h-4 w-4" /> Take selfie
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
           <label className="mt-10 block text-sm font-medium">Project name</label>
           <input
             value={projectName}
@@ -339,6 +374,7 @@ function RecordPage() {
             placeholder="e.g. Album cover — Aurora"
             className="mt-2 w-full rounded-md border border-input bg-card px-4 py-3 outline-none focus:ring-2 focus:ring-ring"
             maxLength={120}
+            disabled={!hasSelfie}
           />
 
           {errMsg && (
@@ -348,7 +384,8 @@ function RecordPage() {
           )}
           <button
             onClick={handleStart}
-            className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90"
+            disabled={!hasSelfie}
+            className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Video className="h-4 w-4" />
             Start Session
