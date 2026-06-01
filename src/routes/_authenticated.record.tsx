@@ -8,12 +8,14 @@ import { createCertificate } from "@/lib/certificates.functions";
 import { finalizeCertificate } from "@/lib/certificate-finalize.functions";
 import { createDraft, getDraft, deleteDraft } from "@/lib/drafts.functions";
 import { getMyProfile } from "@/lib/profile.functions";
+import { verifySubmission, type CheckResult } from "@/lib/verification.functions";
+import { extractVideoFrames, extractPdfPageImages } from "@/lib/media-sampling";
 import { generateCombinedPdf } from "@/lib/certificate-pdf";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { PreflightChecklist } from "@/components/PreflightChecklist";
 import { RecordingControls } from "@/components/RecordingControls";
 import { useQuery } from "@tanstack/react-query";
-import { Video, Download, Copy, Check, FileText, Save, Camera } from "lucide-react";
+import { Video, Download, Copy, Check, X, FileText, Save, Camera, ShieldCheck } from "lucide-react";
 
 const searchSchema = z.object({
   draft: z.string().uuid().optional(),
