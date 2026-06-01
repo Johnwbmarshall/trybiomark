@@ -128,6 +128,10 @@ function RecordPage() {
 
   const handleStart = async () => {
     setErrMsg(null);
+    if (!hasSelfie) {
+      setErrMsg("Add a verification selfie to your profile before recording.");
+      return;
+    }
     if (!projectName.trim()) {
       setErrMsg("Give your project a name first.");
       return;
