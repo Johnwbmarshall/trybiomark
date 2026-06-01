@@ -105,6 +105,8 @@ export const Route = createRootRouteWithContext<{
       { name: "description", content: "Records digital creation processes via webcam and screen recording to generate verifiable proof of human authorship." },
       { property: "og:description", content: "Records digital creation processes via webcam and screen recording to generate verifiable proof of human authorship." },
       { name: "twitter:description", content: "Records digital creation processes via webcam and screen recording to generate verifiable proof of human authorship." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/20eb62b2-dd68-4402-9ac4-0bfa2fcef03a/id-preview-070da14b--3af8b717-0412-4687-a1de-b7986e2d9fc8.lovable.app-1780347521876.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/20eb62b2-dd68-4402-9ac4-0bfa2fcef03a/id-preview-070da14b--3af8b717-0412-4687-a1de-b7986e2d9fc8.lovable.app-1780347521876.png" },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
