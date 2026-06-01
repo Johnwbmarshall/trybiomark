@@ -272,6 +272,41 @@ function RecordPage() {
         },
       });
 
+      // ----- Gemini-powered 6-check verification -----
+      setUploadMsg("Sampling recording for verification…");
+      const screenBlobForFrames =
+        pending.screenBlob ?? (await downloadStorage("recordings", screenPath));
+      const webcamBlobForFrames =
+        pending.webcamBlob ?? (await downloadStorage("recordings", webcamPath));
+
+      const [screenFrames, webcamFrames, pdfPageImages] = await Promise.all([
+        extractVideoFrames(screenBlobForFrames, 10, 1024),
+        extractVideoFrames(webcamBlobForFrames, 8, 480),
+        extractPdfPageImages(pdfFile, 6, 900),
+      ]);
+
+      setUploadMsg("Running Gemini verification (this can take ~30 s)…");
+      const verdict = await verifyFn({
+        data: {
+          certificateId: cert.certificateId,
+          screenFrames,
+          webcamFrames,
+          pdfPageImages,
+          durationSeconds: pending.durationSeconds,
+          projectName: cert.projectName,
+        },
+      });
+
+      if (!verdict.passed) {
+        setVerification({
+          checks: verdict.checks,
+          summary: verdict.summary,
+          certificateId: cert.certificateId,
+        });
+        setPhase("rejected");
+        return;
+      }
+
       setUploadMsg("Appending certificate to your PDF…");
       const combinedBlob = await generateCombinedPdf(pdfFile, {
         certificateId: cert.certificateId,
