@@ -175,6 +175,12 @@ function RecordPage() {
     }
   };
 
+  const downloadStorage = async (bucket: string, path: string): Promise<Blob> => {
+    const { data, error } = await supabase.storage.from(bucket).download(path);
+    if (error || !data) throw new Error(error?.message ?? "Could not download file");
+    return data;
+  };
+
   // Upload recording blobs to storage (used both for "save as draft" and "submit")
   const ensureUploaded = async (
     userId: string,
