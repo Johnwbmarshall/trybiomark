@@ -24,13 +24,22 @@ interface IssuedCertificate {
   downloadUrl: string;
 }
 
+interface RecordingResult {
+  screenBlob: Blob;
+  webcamBlob: Blob;
+  durationSeconds: number;
+}
+
 const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB
+
+type Phase = "setup" | "live" | "attach" | "uploading" | "done";
 
 function RecordPage() {
   const recorder = useMediaRecorder();
   const [projectName, setProjectName] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [phase, setPhase] = useState<"setup" | "live" | "uploading" | "done">("setup");
+  const [phase, setPhase] = useState<Phase>("setup");
+  const [recording, setRecording] = useState<RecordingResult | null>(null);
   const [uploadMsg, setUploadMsg] = useState("");
   const [issued, setIssued] = useState<IssuedCertificate | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -69,10 +78,6 @@ function RecordPage() {
       setErrMsg("Give your project a name first.");
       return;
     }
-    if (!pdfFile) {
-      setErrMsg("Attach the PDF version of the document you're verifying.");
-      return;
-    }
     try {
       await recorder.start();
       setPhase("live");
@@ -83,14 +88,31 @@ function RecordPage() {
 
   const handleStop = async () => {
     try {
-      setPhase("uploading");
-      setUploadMsg("Finalizing recording…");
       const result = await recorder.stop();
+      setRecording(result);
+      setPhase("attach");
+    } catch (e) {
+      setErrMsg(e instanceof Error ? e.message : "Could not stop recording.");
+    }
+  };
+
+  const handleFinalize = async () => {
+    setErrMsg(null);
+    if (!recording) {
+      setErrMsg("Recording missing. Please try again.");
+      return;
+    }
+    if (!pdfFile) {
+      setErrMsg("Attach the completed PDF you produced during the recording.");
+      return;
+    }
+    try {
+      setPhase("uploading");
+      setUploadMsg("Preparing upload…");
 
       const { data: userData } = await supabase.auth.getUser();
       const user = userData.user;
       if (!user) throw new Error("Not signed in.");
-      if (!pdfFile) throw new Error("Missing PDF document.");
 
       const stamp = Date.now();
       const screenPath = `${user.id}/${stamp}-screen.webm`;
@@ -100,13 +122,13 @@ function RecordPage() {
       setUploadMsg("Uploading screen recording…");
       const up1 = await supabase.storage
         .from("recordings")
-        .upload(screenPath, result.screenBlob, { contentType: "video/webm" });
+        .upload(screenPath, recording.screenBlob, { contentType: "video/webm" });
       if (up1.error) throw new Error(up1.error.message);
 
       setUploadMsg("Uploading webcam recording…");
       const up2 = await supabase.storage
         .from("recordings")
-        .upload(webcamPath, result.webcamBlob, { contentType: "video/webm" });
+        .upload(webcamPath, recording.webcamBlob, { contentType: "video/webm" });
       if (up2.error) throw new Error(up2.error.message);
 
       setUploadMsg("Uploading your document…");
@@ -121,7 +143,7 @@ function RecordPage() {
           projectName: projectName.trim(),
           screenVideoPath: screenPath,
           webcamVideoPath: webcamPath,
-          durationSeconds: result.durationSeconds,
+          durationSeconds: recording.durationSeconds,
         },
       });
 
@@ -179,7 +201,7 @@ function RecordPage() {
       setPhase("done");
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "Upload failed.");
-      setPhase("live");
+      setPhase("attach");
     }
   };
 
@@ -193,8 +215,9 @@ function RecordPage() {
         <div className="max-w-xl">
           <h1 className="font-display text-5xl">New session</h1>
           <p className="mt-3 text-muted-foreground">
-            We'll record your screen and webcam together while you work. When you stop, we'll
-            append a signed certificate to your PDF and email it to you.
+            We'll record your screen and webcam together while you work. When you stop,
+            you'll attach the completed PDF you produced during the session — we'll
+            append a signed certificate to it and email it to you.
           </p>
 
           <label className="mt-10 block text-sm font-medium">Project name</label>
@@ -205,31 +228,6 @@ function RecordPage() {
             className="mt-2 w-full rounded-md border border-input bg-card px-4 py-3 outline-none focus:ring-2 focus:ring-ring"
             maxLength={120}
           />
-
-          <label className="mt-6 block text-sm font-medium">
-            Document being verified (PDF)
-          </label>
-          <div className="mt-2 rounded-md border border-dashed border-input bg-card px-4 py-4">
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={handlePdfChange}
-              className="block w-full text-sm file:mr-4 file:rounded file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground hover:file:bg-accent"
-            />
-            {pdfFile && (
-              <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-                <FileText className="h-4 w-4 text-gold" />
-                <span className="truncate">{pdfFile.name}</span>
-                <span className="text-xs">
-                  ({(pdfFile.size / 1024 / 1024).toFixed(2)} MB)
-                </span>
-              </div>
-            )}
-            <p className="mt-2 text-xs text-muted-foreground">
-              Required. We'll append the Certificate of Authenticity as the final page of
-              this PDF and email it to you when the session ends. Max 20 MB.
-            </p>
-          </div>
 
           {errMsg && (
             <p className="mt-3 text-sm text-destructive bg-destructive/10 rounded px-3 py-2">
@@ -249,7 +247,7 @@ function RecordPage() {
         </div>
       )}
 
-      {(phase === "live" || phase === "uploading") && (
+      {phase === "live" && (
         <div>
           <div className="flex items-center justify-between">
             <div>
@@ -265,11 +263,10 @@ function RecordPage() {
               </div>
               <button
                 onClick={handleStop}
-                disabled={phase === "uploading"}
-                className="mt-3 inline-flex items-center gap-2 rounded-md bg-destructive px-5 py-2.5 text-sm font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-60"
+                className="mt-3 inline-flex items-center gap-2 rounded-md bg-destructive px-5 py-2.5 text-sm font-medium text-destructive-foreground hover:opacity-90"
               >
                 <Square className="h-4 w-4 fill-current" />
-                {phase === "uploading" ? "Saving…" : "Stop Recording"}
+                Stop Recording
               </button>
             </div>
           </div>
@@ -292,14 +289,61 @@ function RecordPage() {
               />
             </div>
           </div>
+        </div>
+      )}
 
-          {phase === "uploading" && (
-            <p className="mt-4 text-sm text-muted-foreground">{uploadMsg}</p>
-          )}
+      {(phase === "attach" || phase === "uploading") && (
+        <div className="max-w-xl">
+          <p className="text-sm uppercase tracking-widest text-gold">Recording complete</p>
+          <h1 className="mt-2 font-display text-4xl">{projectName}</h1>
+          <p className="mt-3 text-muted-foreground">
+            Recorded {formatTime(recording?.durationSeconds ?? 0)}. Now attach the
+            completed PDF version of the document you produced during the session. We'll
+            append the Certificate of Authenticity as the final page and email you a
+            secure download link.
+          </p>
+
+          <label className="mt-8 block text-sm font-medium">
+            Completed document (PDF)
+          </label>
+          <div className="mt-2 rounded-md border border-dashed border-input bg-card px-4 py-4">
+            <input
+              type="file"
+              accept="application/pdf"
+              onChange={handlePdfChange}
+              disabled={phase === "uploading"}
+              className="block w-full text-sm file:mr-4 file:rounded file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground hover:file:bg-accent disabled:opacity-60"
+            />
+            {pdfFile && (
+              <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                <FileText className="h-4 w-4 text-gold" />
+                <span className="truncate">{pdfFile.name}</span>
+                <span className="text-xs">
+                  ({(pdfFile.size / 1024 / 1024).toFixed(2)} MB)
+                </span>
+              </div>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">
+              Required. Max 20 MB.
+            </p>
+          </div>
+
           {errMsg && (
             <p className="mt-3 text-sm text-destructive bg-destructive/10 rounded px-3 py-2">
               {errMsg}
             </p>
+          )}
+
+          <button
+            onClick={handleFinalize}
+            disabled={phase === "uploading" || !pdfFile}
+            className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+          >
+            {phase === "uploading" ? "Processing…" : "Submit for verification"}
+          </button>
+
+          {phase === "uploading" && (
+            <p className="mt-4 text-sm text-muted-foreground">{uploadMsg}</p>
           )}
         </div>
       )}
