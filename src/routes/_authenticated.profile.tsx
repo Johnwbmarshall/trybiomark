@@ -2,9 +2,10 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { Camera, RefreshCw, Check } from "lucide-react";
+import { Camera, RefreshCw, Check, ShieldCheck, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getMyProfile, setProfileSelfie } from "@/lib/profile.functions";
+import { startDiditVerification } from "@/lib/didit.functions";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({ meta: [{ title: "Your profile — Bio Mark" }] }),
