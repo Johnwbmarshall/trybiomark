@@ -95,7 +95,8 @@ export const Route = createFileRoute("/api/public/didit/webhook")({
         }
 
         // Match on session id first; fall back to vendor_data (user_id).
-        const query = supabaseAdmin.from("profiles").update(update);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const query = supabaseAdmin.from("profiles").update(update as any);
         const { error } = vendor_data
           ? await query.or(
               `kyc_session_id.eq.${session_id},user_id.eq.${vendor_data}`,
