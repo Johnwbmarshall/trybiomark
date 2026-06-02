@@ -166,31 +166,66 @@ export function useMediaRecorder() {
         },
       });
 
+      // Detect how many physical monitors the user has via the Window
+      // Management API (Chromium-based browsers). The user MUST share every
+      // detected monitor before recording can begin — partial captures are
+      // not allowed.
+      let expectedMonitorCount = 1;
+      const nav = navigator as Navigator & {
+        permissions?: { query: (q: { name: string }) => Promise<{ state: string }> };
+      };
+      const win = window as Window & {
+        getScreenDetails?: () => Promise<{ screens: unknown[] }>;
+      };
+      if (typeof win.getScreenDetails === "function") {
+        try {
+          // Some browsers gate this behind a permission prompt.
+          try {
+            await nav.permissions?.query({ name: "window-management" });
+          } catch {
+            /* permission name may be unknown — fall through */
+          }
+          const details = await win.getScreenDetails();
+          if (Array.isArray(details?.screens) && details.screens.length > 0) {
+            expectedMonitorCount = details.screens.length;
+          }
+        } catch {
+          // Permission denied or API unavailable — fall back to single monitor.
+          expectedMonitorCount = 1;
+        }
+      }
+
       const monitorStreams: MediaStream[] = [];
       monitorStreams.push(await captureMonitor());
 
-      // Multi-monitor capture is OPTIONAL. The verification step is designed
-      // to identify the user's active "working document" among whatever
-      // surfaces are shared, and reference material left open on other
-      // monitors is explicitly allowed. Only OFFER to add more monitors —
-      // never block recording when extra monitors aren't shared.
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const more = window.confirm(
-          `Captured ${monitorStreams.length} screen${monitorStreams.length > 1 ? "s" : ""}. ` +
-            "Optional: share another monitor? It's fine to leave reference " +
-            "documents open on monitors you don't share — Bio Mark will " +
-            "identify the document you're actively working on. Click OK to " +
-            "add another monitor, or Cancel to continue.",
+      // If more than one monitor is attached, require the user to share each
+      // remaining monitor before we proceed. Cancelling the picker aborts the
+      // whole session — we cannot start recording with monitors unshared.
+      while (monitorStreams.length < expectedMonitorCount) {
+        const remaining = expectedMonitorCount - monitorStreams.length;
+        const proceed = window.confirm(
+          `Bio Mark detected ${expectedMonitorCount} monitors connected to this ` +
+            `computer and ${monitorStreams.length} ${monitorStreams.length === 1 ? "has" : "have"} been shared so far. ` +
+            `Please share the remaining ${remaining} monitor${remaining > 1 ? "s" : ""} ` +
+            "to begin recording. Click OK to pick the next monitor, or Cancel " +
+            "to abort the session.",
         );
-        if (!more) break;
+        if (!proceed) {
+          throw new Error(
+            `All ${expectedMonitorCount} connected monitors must be shared before recording can begin.`,
+          );
+        }
         try {
           monitorStreams.push(await captureMonitor());
-        } catch (e) {
-          if (e instanceof Error && /NotAllowed|denied|cancel/i.test(e.message)) break;
-          throw e;
+        } catch {
+          // If the user cancels or denies the picker, abort — partial captures
+          // are not allowed.
+          throw new Error(
+            `All ${expectedMonitorCount} connected monitors must be shared before recording can begin.`,
+          );
         }
       }
+
 
       screenSourceStreamsRef.current = monitorStreams;
       const screen = composeScreens(monitorStreams);
