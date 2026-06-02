@@ -262,12 +262,59 @@ function RecordPage() {
     }
     try {
       setPhase("uploading");
-      setUploadMsg("Preparing upload…");
+      setUploadMsg("Preparing verification…");
 
       const { data: userData } = await supabase.auth.getUser();
       const user = userData.user;
       if (!user) throw new Error("Not signed in.");
 
+      // ----- Verify FIRST, before uploading or issuing anything -----
+      // On failure no certificate row is created, nothing is uploaded,
+      // and no email is sent.
+      const screenBlobForFrames =
+        pending.screenBlob ??
+        (pending.screenPath
+          ? await downloadStorage("recordings", pending.screenPath)
+          : null);
+      const webcamBlobForFrames =
+        pending.webcamBlob ??
+        (pending.webcamPath
+          ? await downloadStorage("recordings", pending.webcamPath)
+          : null);
+      if (!screenBlobForFrames || !webcamBlobForFrames) {
+        throw new Error("Recording missing — please record again.");
+      }
+
+      setUploadMsg("Sampling recording for verification…");
+      const [screenFrames, webcamFrames, pdfPageImages] = await Promise.all([
+        // Screen text needs to be legible — sample densely and at high resolution.
+        extractVideoFrames(screenBlobForFrames, 24, 1600),
+        extractVideoFrames(webcamBlobForFrames, 8, 480),
+        extractPdfPageImages(pdfFile, 6, 900),
+      ]);
+
+      setUploadMsg("Running Gemini verification (this can take ~30 s)…");
+      const verdict = await verifyFn({
+        data: {
+          screenFrames,
+          webcamFrames,
+          pdfPageImages,
+          durationSeconds: pending.durationSeconds,
+          projectName: projectName.trim(),
+        },
+      });
+
+      if (!verdict.passed) {
+        setVerification({
+          checks: verdict.checks,
+          summary: verdict.summary,
+          certificateId: "",
+        });
+        setPhase("rejected");
+        return;
+      }
+
+      // ----- Verification passed: upload artifacts and issue cert -----
       const stamp = Date.now();
       const { screenPath, webcamPath } = await ensureUploaded(user.id, stamp);
       const originalPdfPath = `${user.id}/${stamp}-original.pdf`;
@@ -285,44 +332,12 @@ function RecordPage() {
           screenVideoPath: screenPath,
           webcamVideoPath: webcamPath,
           durationSeconds: pending.durationSeconds,
+          verification: {
+            checks: verdict.checks,
+            summary: verdict.summary,
+          },
         },
       });
-
-      // ----- Gemini-powered 6-check verification -----
-      setUploadMsg("Sampling recording for verification…");
-      const screenBlobForFrames =
-        pending.screenBlob ?? (await downloadStorage("recordings", screenPath));
-      const webcamBlobForFrames =
-        pending.webcamBlob ?? (await downloadStorage("recordings", webcamPath));
-
-      const [screenFrames, webcamFrames, pdfPageImages] = await Promise.all([
-        // Screen text needs to be legible — sample densely and at high resolution.
-        extractVideoFrames(screenBlobForFrames, 24, 1600),
-        extractVideoFrames(webcamBlobForFrames, 8, 480),
-        extractPdfPageImages(pdfFile, 6, 900),
-      ]);
-
-      setUploadMsg("Running Gemini verification (this can take ~30 s)…");
-      const verdict = await verifyFn({
-        data: {
-          certificateId: cert.certificateId,
-          screenFrames,
-          webcamFrames,
-          pdfPageImages,
-          durationSeconds: pending.durationSeconds,
-          projectName: cert.projectName,
-        },
-      });
-
-      if (!verdict.passed) {
-        setVerification({
-          checks: verdict.checks,
-          summary: verdict.summary,
-          certificateId: cert.certificateId,
-        });
-        setPhase("rejected");
-        return;
-      }
 
       setUploadMsg("Appending certificate to your PDF…");
       const combinedBlob = await generateCombinedPdf(pdfFile, {

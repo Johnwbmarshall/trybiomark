@@ -13,7 +13,8 @@ const schema = z.object({
   certificateId: z
     .string()
     .trim()
-    .regex(/^CERT-[A-Z0-9-]+$/i, "Invalid certificate id"),
+    .regex(/^CERT-[A-Z0-9-]+$/i, "Invalid certificate id")
+    .optional(),
   screenFrames: z.array(frame).min(1).max(40),
   webcamFrames: z.array(frame).min(1).max(20),
   pdfPageImages: z.array(frame).min(1).max(10),
@@ -244,21 +245,25 @@ Below are: SELFIE (1 image), then WEBCAM frames in chronological order, then SCR
     const allPassed = checks.every((c) => c.passed);
     const status = allPassed ? "verified" : "rejected";
 
-    // 4. Persist verdict on the certificate row.
-    const notes = {
-      checks: checks.map((c) => ({ ...c })),
-      summary: parsed.summary ?? "",
-    } as unknown as Record<string, unknown>;
-    const { error: updErr } = await supabase
-      .from("certificates")
-      .update({
-        verification_status: status,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        verification_notes: notes as any,
-      })
-      .eq("certificate_id", data.certificateId)
-      .eq("user_id", userId);
-    if (updErr) throw new Error(updErr.message);
+    // Only persist verdict if a certificate row already exists. In the new
+    // flow we verify BEFORE issuing the certificate, so on a failed verdict
+    // there's nothing to update — the cert is never created.
+    if (data.certificateId) {
+      const notes = {
+        checks: checks.map((c) => ({ ...c })),
+        summary: parsed.summary ?? "",
+      } as unknown as Record<string, unknown>;
+      const { error: updErr } = await supabase
+        .from("certificates")
+        .update({
+          verification_status: status,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          verification_notes: notes as any,
+        })
+        .eq("certificate_id", data.certificateId)
+        .eq("user_id", userId);
+      if (updErr) throw new Error(updErr.message);
+    }
 
     return {
       passed: allPassed,
