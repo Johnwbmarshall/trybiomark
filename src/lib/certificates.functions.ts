@@ -49,6 +49,13 @@ export const createCertificate = createServerFn({ method: "POST" })
     }
 
 
+    const notes = data.verification
+      ? {
+          checks: data.verification.checks,
+          summary: data.verification.summary ?? "",
+        }
+      : null;
+
     // Try a few times in the extremely unlikely event of a collision
     for (let attempt = 0; attempt < 5; attempt++) {
       const certificateId = generateCertificateId();
@@ -62,6 +69,8 @@ export const createCertificate = createServerFn({ method: "POST" })
           webcam_video_path: data.webcamVideoPath,
           duration_seconds: data.durationSeconds,
           verification_status: "verified",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          verification_notes: notes as any,
         })
         .select("certificate_id, project_name, created_at")
         .single();
