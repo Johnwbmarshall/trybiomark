@@ -93,7 +93,9 @@ export const verifyCertificate = createServerFn({ method: "POST" })
     const normalized = data.certificateId.toUpperCase();
     const { data: row, error } = await supabaseAdmin
       .from("public_certificates")
-      .select("certificate_id, project_name, created_at, verification_status, duration_seconds")
+      .select(
+        "certificate_id, project_name, created_at, verification_status, duration_seconds, verification_notes",
+      )
       .eq("certificate_id", normalized)
       .maybeSingle();
     if (error) {
@@ -101,6 +103,19 @@ export const verifyCertificate = createServerFn({ method: "POST" })
       return { found: false as const, error: "Lookup failed. Please try again." };
     }
     if (!row || !row.certificate_id) return { found: false as const };
+
+    // verification_notes shape: { checks: Array<{key,label,passed,confidence,reason}>, summary: string }
+    const notes = (row.verification_notes ?? null) as {
+      checks?: Array<{
+        key: string;
+        label: string;
+        passed: boolean;
+        confidence: "low" | "medium" | "high";
+        reason: string;
+      }>;
+      summary?: string;
+    } | null;
+
     return {
       found: true as const,
       certificate: {
@@ -109,6 +124,8 @@ export const verifyCertificate = createServerFn({ method: "POST" })
         createdAt: row.created_at ?? new Date().toISOString(),
         verificationStatus: row.verification_status ?? "verified",
         durationSeconds: row.duration_seconds ?? 0,
+        checks: notes?.checks ?? [],
+        summary: notes?.summary ?? "",
       },
     };
   });
