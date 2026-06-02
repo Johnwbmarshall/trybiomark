@@ -1,68 +1,60 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { Heart, ExternalLink } from "lucide-react";
-
-const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID;
+import { getPaypalClientId } from "@/lib/paypal.functions";
 
 declare global {
   interface Window {
     paypal?: {
       Buttons: (config: {
-        style?: {
-          shape?: string;
-          color?: string;
-          layout?: string;
-          label?: string;
-        };
-        createOrder?: (data: unknown, actions: { order: { create: (details: unknown) => Promise<string> } }) => Promise<string>;
-        onApprove?: (data: unknown, actions: { order: { capture: () => Promise<unknown> } }) => Promise<void>;
+        style?: { shape?: string; color?: string; layout?: string; label?: string };
       }) => { render: (el: HTMLElement) => Promise<void> };
     };
   }
 }
 
 export function PayPalDonateButton() {
+  const fetchClientId = useServerFn(getPaypalClientId);
+  const { data } = useQuery({
+    queryKey: ["paypal-client-id"],
+    queryFn: () => fetchClientId(),
+    staleTime: Infinity,
+  });
+  const clientId = data?.clientId ?? null;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [sdkReady, setSdkReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!PAYPAL_CLIENT_ID) return;
-
+    if (!clientId) return;
     if (window.paypal) {
       setSdkReady(true);
       return;
     }
-
     const script = document.createElement("script");
-    script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(PAYPAL_CLIENT_ID)}&currency=CAD`;
+    script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(
+      clientId,
+    )}&currency=CAD&components=buttons&intent=capture`;
     script.async = true;
     script.onload = () => setSdkReady(true);
     script.onerror = () => setLoadError("Failed to load PayPal.");
     document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, []);
+  }, [clientId]);
 
   useEffect(() => {
     if (!sdkReady || !containerRef.current || !window.paypal) return;
-
-    const buttons = window.paypal.Buttons({
-      style: {
-        shape: "pill",
-        color: "gold",
-        layout: "horizontal",
-        label: "donate",
-      },
-    });
-
-    buttons.render(containerRef.current).catch(() => {
-      setLoadError("Failed to render PayPal button.");
-    });
+    containerRef.current.innerHTML = "";
+    window.paypal
+      .Buttons({
+        style: { shape: "pill", color: "gold", layout: "horizontal", label: "donate" },
+      })
+      .render(containerRef.current)
+      .catch(() => setLoadError("Failed to render PayPal button."));
   }, [sdkReady]);
 
-  if (!PAYPAL_CLIENT_ID) {
+  if (!clientId) {
     return (
       <a
         href="https://www.paypal.com/donate"
@@ -78,10 +70,8 @@ export function PayPalDonateButton() {
   }
 
   if (loadError) {
-    return (
-      <p className="text-sm text-destructive">{loadError}</p>
-    );
+    return <p className="text-sm text-destructive">{loadError}</p>;
   }
 
-  return <div ref={containerRef} className="min-h-[45px]" />;
+  return <div ref={containerRef} className="min-h-[45px] w-full max-w-[300px]" />;
 }
