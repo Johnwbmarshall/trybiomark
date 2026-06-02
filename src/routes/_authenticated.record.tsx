@@ -297,7 +297,7 @@ function RecordPage() {
 
       const [screenFrames, webcamFrames, pdfPageImages] = await Promise.all([
         // Screen text needs to be legible — sample densely and at high resolution.
-        extractVideoFrames(screenBlobForFrames, 18, 1600),
+        extractVideoFrames(screenBlobForFrames, 24, 1600),
         extractVideoFrames(webcamBlobForFrames, 8, 480),
         extractPdfPageImages(pdfFile, 6, 900),
       ]);
