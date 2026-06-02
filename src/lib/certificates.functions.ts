@@ -4,11 +4,25 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { generateCertificateId } from "./certificate-id";
 
+const checkSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  passed: z.boolean(),
+  confidence: z.enum(["low", "medium", "high"]),
+  reason: z.string(),
+});
+
 const createSchema = z.object({
   projectName: z.string().trim().min(1).max(120),
   screenVideoPath: z.string().trim().min(1).max(500),
   webcamVideoPath: z.string().trim().min(1).max(500),
   durationSeconds: z.number().int().min(0).max(60 * 60 * 24),
+  verification: z
+    .object({
+      checks: z.array(checkSchema).min(1),
+      summary: z.string().max(1000).default(""),
+    })
+    .optional(),
 });
 
 export const createCertificate = createServerFn({ method: "POST" })
