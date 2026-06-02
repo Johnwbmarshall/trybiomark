@@ -23,6 +23,7 @@ import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/em
 import { Route as LovableEmailTransactionalSendRouteImport } from './routes/lovable/email/transactional/send'
 import { Route as LovableEmailTransactionalPreviewRouteImport } from './routes/lovable/email/transactional/preview'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
+import { Route as ApiPublicDiditWebhookRouteImport } from './routes/api/public/didit.webhook'
 
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
   id: '/unsubscribe',
@@ -96,6 +97,11 @@ const LovableEmailQueueProcessRoute =
     path: '/lovable/email/queue/process',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicDiditWebhookRoute = ApiPublicDiditWebhookRouteImport.update({
+  id: '/api/public/didit/webhook',
+  path: '/api/public/didit/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/verify/$id': typeof VerifyIdRoute
   '/verify/': typeof VerifyIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
+  '/api/public/didit/webhook': typeof ApiPublicDiditWebhookRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
   '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/verify/$id': typeof VerifyIdRoute
   '/verify': typeof VerifyIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
+  '/api/public/didit/webhook': typeof ApiPublicDiditWebhookRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
   '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/verify/$id': typeof VerifyIdRoute
   '/verify/': typeof VerifyIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
+  '/api/public/didit/webhook': typeof ApiPublicDiditWebhookRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
   '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
@@ -157,6 +166,7 @@ export interface FileRouteTypes {
     | '/verify/$id'
     | '/verify/'
     | '/lovable/email/suppression'
+    | '/api/public/didit/webhook'
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
     | '/lovable/email/transactional/send'
@@ -172,6 +182,7 @@ export interface FileRouteTypes {
     | '/verify/$id'
     | '/verify'
     | '/lovable/email/suppression'
+    | '/api/public/didit/webhook'
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
     | '/lovable/email/transactional/send'
@@ -188,6 +199,7 @@ export interface FileRouteTypes {
     | '/verify/$id'
     | '/verify/'
     | '/lovable/email/suppression'
+    | '/api/public/didit/webhook'
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
     | '/lovable/email/transactional/send'
@@ -202,6 +214,7 @@ export interface RootRouteChildren {
   VerifyIdRoute: typeof VerifyIdRoute
   VerifyIndexRoute: typeof VerifyIndexRoute
   LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
+  ApiPublicDiditWebhookRoute: typeof ApiPublicDiditWebhookRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
   LovableEmailTransactionalPreviewRoute: typeof LovableEmailTransactionalPreviewRoute
   LovableEmailTransactionalSendRoute: typeof LovableEmailTransactionalSendRoute
@@ -307,6 +320,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LovableEmailQueueProcessRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/didit/webhook': {
+      id: '/api/public/didit/webhook'
+      path: '/api/public/didit/webhook'
+      fullPath: '/api/public/didit/webhook'
+      preLoaderRoute: typeof ApiPublicDiditWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -335,6 +355,7 @@ const rootRouteChildren: RootRouteChildren = {
   VerifyIdRoute: VerifyIdRoute,
   VerifyIndexRoute: VerifyIndexRoute,
   LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
+  ApiPublicDiditWebhookRoute: ApiPublicDiditWebhookRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
   LovableEmailTransactionalPreviewRoute: LovableEmailTransactionalPreviewRoute,
   LovableEmailTransactionalSendRoute: LovableEmailTransactionalSendRoute,
@@ -342,3 +363,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
