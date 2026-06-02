@@ -16,6 +16,7 @@ function ProfilePage() {
   const navigate = useNavigate();
   const getProfileFn = useServerFn(getMyProfile);
   const setSelfieFn = useServerFn(setProfileSelfie);
+  const startKycFn = useServerFn(startDiditVerification);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
