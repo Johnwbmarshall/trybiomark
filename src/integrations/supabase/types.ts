@@ -250,6 +250,7 @@ export type Database = {
           created_at: string | null
           duration_seconds: number | null
           project_name: string | null
+          verification_notes: Json | null
           verification_status: string | null
         }
         Insert: {
@@ -257,6 +258,7 @@ export type Database = {
           created_at?: string | null
           duration_seconds?: number | null
           project_name?: string | null
+          verification_notes?: Json | null
           verification_status?: string | null
         }
         Update: {
@@ -264,6 +266,7 @@ export type Database = {
           created_at?: string | null
           duration_seconds?: number | null
           project_name?: string | null
+          verification_notes?: Json | null
           verification_status?: string | null
         }
         Relationships: []
