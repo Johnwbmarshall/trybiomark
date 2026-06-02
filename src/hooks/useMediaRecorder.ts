@@ -55,7 +55,6 @@ export function useMediaRecorder() {
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: {
         frameRate: 30,
-        // @ts-expect-error - newer Screen Capture API hints not in lib.dom
         displaySurface: "monitor",
       },
       audio: true,
