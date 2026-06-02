@@ -73,7 +73,7 @@ async function enqueueEmail(args: {
 
   // Render template.
   const React = await import("react");
-  const { render } = await import("@react-email/render");
+  const { render } = await import("@react-email/components");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const element = React.createElement(entry.component as any, args.templateData);
   const html = await render(element);
