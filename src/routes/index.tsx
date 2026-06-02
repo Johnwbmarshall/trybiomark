@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ShieldCheck, Video, Award, Search } from "lucide-react";
+import { ShieldCheck, Video, Award, Search, Heart, HandHeart } from "lucide-react";
+import { PayPalDonateButton } from "@/components/PayPalDonateButton";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -28,6 +29,10 @@ function Landing() {
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-gold" />
           Human-process verification registry
         </div>
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-xs font-medium text-gold">
+          <HandHeart className="h-3.5 w-3.5" />
+          100% non-profit — all proceeds support human writing & creative initiatives
+        </div>
         <h1 className="mt-8 font-display text-6xl leading-[1.05] md:text-7xl">
           Prove your work
           <br />
@@ -35,7 +40,7 @@ function Landing() {
         </h1>
         <p className="mx-auto mt-6 max-w-xl text-lg text-muted-foreground">
           Record your screen and webcam while you create. Receive a signed Certificate of
-          Authenticity with a public ID anyone can verify — for free.
+          Authenticity with a public ID anyone can verify — <span className="font-medium text-foreground">completely free</span>.
         </p>
         <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
           <Link
@@ -76,13 +81,28 @@ function Landing() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-3xl px-6 pb-32 text-center">
+      <section className="mx-auto max-w-3xl px-6 pb-16 text-center">
         <ShieldCheck className="mx-auto h-8 w-8 text-gold" />
         <h2 className="mt-4 font-display text-3xl">Your footage is yours.</h2>
         <p className="mt-3 text-muted-foreground">
           Recordings are stored privately. Only you can access them. The public registry only
           ever exposes the project name, date, and verified status.
         </p>
+      </section>
+
+      <section className="mx-auto max-w-xl px-6 pb-32 text-center">
+        <div className="rounded-2xl border border-gold/20 bg-gold/5 p-8">
+          <Heart className="mx-auto h-8 w-8 text-gold" />
+          <h2 className="mt-4 font-display text-2xl">Support the mission</h2>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Bio Mark is a fully non-profit initiative. Every donation goes directly toward
+            supporting human writing, creative arts, and initiatives that protect authentic
+            human expression in the digital age.
+          </p>
+          <div className="mt-6 flex justify-center">
+            <PayPalDonateButton />
+          </div>
+        </div>
       </section>
     </main>
   );
