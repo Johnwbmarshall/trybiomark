@@ -252,7 +252,12 @@ export function useMediaRecorder() {
           ...webcam.getVideoTracks(),
           ...refreshedMic.getAudioTracks(),
         ]);
-      } catch {
+      } catch (err) {
+        logMicCaptureError(
+          err instanceof Error
+            ? `mic refresh failed (${err.name}: ${err.message}) — keeping original track`
+            : "mic refresh failed — keeping original track",
+        );
         /* keep the originally granted microphone track */
       }
 
