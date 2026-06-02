@@ -15,6 +15,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as VerifyIndexRouteImport } from './routes/verify.index'
 import { Route as VerifyIdRouteImport } from './routes/verify.$id'
+import { Route as EvidenceTokenRouteImport } from './routes/evidence.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
 import { Route as AuthenticatedRecordRouteImport } from './routes/_authenticated.record'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated.profile'
@@ -52,6 +53,11 @@ const VerifyIndexRoute = VerifyIndexRouteImport.update({
 const VerifyIdRoute = VerifyIdRouteImport.update({
   id: '/verify/$id',
   path: '/verify/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EvidenceTokenRoute = EvidenceTokenRouteImport.update({
+  id: '/evidence/$token',
+  path: '/evidence/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EmailUnsubscribeRoute = EmailUnsubscribeRouteImport.update({
@@ -111,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileRoute
   '/record': typeof AuthenticatedRecordRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
+  '/evidence/$token': typeof EvidenceTokenRoute
   '/verify/$id': typeof VerifyIdRoute
   '/verify/': typeof VerifyIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
@@ -127,6 +134,7 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileRoute
   '/record': typeof AuthenticatedRecordRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
+  '/evidence/$token': typeof EvidenceTokenRoute
   '/verify/$id': typeof VerifyIdRoute
   '/verify': typeof VerifyIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
@@ -145,6 +153,7 @@ export interface FileRoutesById {
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/record': typeof AuthenticatedRecordRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
+  '/evidence/$token': typeof EvidenceTokenRoute
   '/verify/$id': typeof VerifyIdRoute
   '/verify/': typeof VerifyIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
@@ -163,6 +172,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/record'
     | '/email/unsubscribe'
+    | '/evidence/$token'
     | '/verify/$id'
     | '/verify/'
     | '/lovable/email/suppression'
@@ -179,6 +189,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/record'
     | '/email/unsubscribe'
+    | '/evidence/$token'
     | '/verify/$id'
     | '/verify'
     | '/lovable/email/suppression'
@@ -196,6 +207,7 @@ export interface FileRouteTypes {
     | '/_authenticated/profile'
     | '/_authenticated/record'
     | '/email/unsubscribe'
+    | '/evidence/$token'
     | '/verify/$id'
     | '/verify/'
     | '/lovable/email/suppression'
@@ -211,6 +223,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
+  EvidenceTokenRoute: typeof EvidenceTokenRoute
   VerifyIdRoute: typeof VerifyIdRoute
   VerifyIndexRoute: typeof VerifyIndexRoute
   LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
@@ -262,6 +275,13 @@ declare module '@tanstack/react-router' {
       path: '/verify/$id'
       fullPath: '/verify/$id'
       preLoaderRoute: typeof VerifyIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/evidence/$token': {
+      id: '/evidence/$token'
+      path: '/evidence/$token'
+      fullPath: '/evidence/$token'
+      preLoaderRoute: typeof EvidenceTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/email/unsubscribe': {
@@ -352,6 +372,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   UnsubscribeRoute: UnsubscribeRoute,
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
+  EvidenceTokenRoute: EvidenceTokenRoute,
   VerifyIdRoute: VerifyIdRoute,
   VerifyIndexRoute: VerifyIndexRoute,
   LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
@@ -363,3 +384,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
