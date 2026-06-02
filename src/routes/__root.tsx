@@ -173,44 +173,64 @@ function SiteHeader() {
   };
 
   return (
-    <header className="border-b border-border/60 bg-background/80 backdrop-blur sticky top-0 z-40">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <Link to="/" className="flex items-center gap-2">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-gold" />
-          <span className="font-display text-xl tracking-tight">Bio Mark</span>
-        </Link>
-        <nav className="flex items-center gap-1 text-sm">
-          <Link to="/verify" className="px-3 py-1.5 rounded hover:bg-secondary">
-            Verify
+    <>
+      <header className="border-b border-border/60 bg-background/80 backdrop-blur sticky top-0 z-40">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <Link to="/" className="flex items-center gap-2">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-gold" />
+            <span className="font-display text-xl tracking-tight">Bio Mark</span>
           </Link>
-          {email ? (
-            <>
-              <Link to="/record" className="px-3 py-1.5 rounded hover:bg-secondary">
-                Record
-              </Link>
-              <Link to="/dashboard" className="px-3 py-1.5 rounded hover:bg-secondary">
-                My Certificates
-              </Link>
-              <Link to="/profile" className="px-3 py-1.5 rounded hover:bg-secondary">
-                Profile
-              </Link>
-              <button
-                onClick={signOut}
-                className="ml-2 px-3 py-1.5 rounded text-muted-foreground hover:bg-secondary"
-              >
-                Sign out
-              </button>
-            </>
-          ) : (
-            <Link
-              to="/login"
-              className="ml-2 px-4 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90"
-            >
-              Sign in
+          <nav className="flex items-center gap-1 text-sm">
+            <Link to="/verify" className="px-3 py-1.5 rounded hover:bg-secondary">
+              Verify
             </Link>
-          )}
-        </nav>
+            {email ? (
+              <>
+                <Link to="/record" className="px-3 py-1.5 rounded hover:bg-secondary">
+                  Record
+                </Link>
+                <Link to="/dashboard" className="px-3 py-1.5 rounded hover:bg-secondary">
+                  My Certificates
+                </Link>
+                <Link to="/profile" className="px-3 py-1.5 rounded hover:bg-secondary">
+                  Profile
+                </Link>
+                <button
+                  onClick={signOut}
+                  className="ml-2 px-3 py-1.5 rounded text-muted-foreground hover:bg-secondary"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                className="ml-2 px-4 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+              >
+                Sign in
+              </Link>
+            )}
+          </nav>
+        </div>
+      </header>
+      <SiteFooter />
+    </>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <footer className="border-t border-border/60 bg-background/80 backdrop-blur">
+      <div className="mx-auto max-w-6xl px-6 py-6">
+        <div className="flex flex-col items-center justify-between gap-3 md:flex-row">
+          <p className="text-xs text-muted-foreground">
+            Bio Mark is a fully non-profit initiative. All proceeds support human writing & creative initiatives.
+          </p>
+          <p className="text-xs text-muted-foreground/60">
+            &copy; {new Date().getFullYear()} Bio Mark
+          </p>
+        </div>
       </div>
-    </header>
+    </footer>
   );
 }
