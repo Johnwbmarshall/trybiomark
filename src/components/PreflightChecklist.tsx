@@ -167,12 +167,12 @@ export function PreflightChecklist({
                   <div
                     className="h-full bg-gold transition-[width] duration-75"
                     style={{ width: `${audioPct}%` }}
-          />
-          <MicTroubleshootPanel webcamStream={webcamStream} audioLevel={audioLevel} />
+                  />
                 </div>
               ) : null
             }
           />
+          <MicTroubleshootPanel webcamStream={webcamStream} audioLevel={audioLevel} />
           <CheckRow
             icon={<MonitorPlay className="h-4 w-4" />}
             title="The right screen is being shared"
