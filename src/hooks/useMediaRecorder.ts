@@ -55,14 +55,16 @@ export function useMediaRecorder() {
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: {
         frameRate: 30,
-        // @ts-expect-error - newer Screen Capture API hints
+        // @ts-expect-error - newer Screen Capture API hints not in lib.dom
         displaySurface: "monitor",
       },
       audio: true,
-      // @ts-expect-error - Chromium-only hints to bias toward entire-screen
-      monitorTypeSurfaces: "include",
-      selfBrowserSurface: "exclude",
-      surfaceSwitching: "include",
+      // Chromium-only hints to bias the picker toward entire-screen
+      ...({
+        monitorTypeSurfaces: "include",
+        selfBrowserSurface: "exclude",
+        surfaceSwitching: "include",
+      } as object),
     });
     const track = stream.getVideoTracks()[0];
     const settings = track.getSettings() as MediaTrackSettings & { displaySurface?: string };
