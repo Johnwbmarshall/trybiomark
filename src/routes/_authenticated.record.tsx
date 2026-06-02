@@ -296,7 +296,8 @@ function RecordPage() {
         pending.webcamBlob ?? (await downloadStorage("recordings", webcamPath));
 
       const [screenFrames, webcamFrames, pdfPageImages] = await Promise.all([
-        extractVideoFrames(screenBlobForFrames, 10, 1024),
+        // Screen text needs to be legible — sample densely and at high resolution.
+        extractVideoFrames(screenBlobForFrames, 18, 1600),
         extractVideoFrames(webcamBlobForFrames, 8, 480),
         extractPdfPageImages(pdfFile, 6, 900),
       ]);
