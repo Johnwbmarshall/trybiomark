@@ -53,7 +53,7 @@ const LABELS: Record<CheckKey, string> = {
   person_matches_selfie:
     "The person on camera matches the profile selfie",
   no_transcription_audio:
-    "No suspicious audio indicating the document was being transcribed/dictated",
+    "No evidence the user is transcribing another document (gaze off-screen/above camera while typing, or dictation/transcription audio cues)",
   no_other_people_in_frame:
     "No additional people appear in the webcam at any point",
   video_and_output_consistent:
