@@ -87,7 +87,7 @@ export const Route = createFileRoute("/api/public/didit/webhook")({
           kyc_verified_at?: string;
         } = {
           kyc_status: normalized,
-          kyc_decision: payload,
+          kyc_decision: JSON.parse(body),
         };
         if (normalized === "verified") {
           update.kyc_verified_at = new Date().toISOString();
