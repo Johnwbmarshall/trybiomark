@@ -161,12 +161,10 @@ export function useMediaRecorder() {
     setError(null);
     setState("requesting");
     try {
-      // Request the webcam (with mic) FIRST. If we request screen capture with
-      // `audio: true` before the mic, Chrome on some OSes (notably Windows)
-      // takes exclusive control of the default audio device for system audio
-      // and the subsequent getUserMedia mic track ends up silent — which is
-      // why the pre-flight mic check stops detecting audio after sharing the
-      // entire screen. Claiming the mic first avoids that race.
+      // Request the webcam (with mic) FIRST. Screen capture intentionally does
+      // not request system audio because on some multi-monitor setups it can
+      // grab or suppress the default input device, leaving the pre-flight mic
+      // meter with a live-but-silent microphone track.
       let webcam = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 },
         audio: microphoneConstraints,
