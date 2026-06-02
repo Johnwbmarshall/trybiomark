@@ -12,6 +12,7 @@ import { verifySubmission, type CheckResult } from "@/lib/verification.functions
 import { extractVideoFrames, extractPdfPageImages } from "@/lib/media-sampling";
 import { generateCombinedPdf } from "@/lib/certificate-pdf";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { submitAppeal } from "@/lib/appeals.functions";
 import { PreflightChecklist } from "@/components/PreflightChecklist";
 import { RecordingControls } from "@/components/RecordingControls";
 import { useQuery } from "@tanstack/react-query";
