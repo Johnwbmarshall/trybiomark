@@ -81,13 +81,14 @@ export const Route = createFileRoute("/api/public/didit/webhook")({
                 ? "in_review"
                 : "in_progress";
 
+        const decisionJson = JSON.parse(body) as Record<string, unknown>;
         const update: {
           kyc_status: string;
-          kyc_decision: typeof payload;
+          kyc_decision: Record<string, unknown>;
           kyc_verified_at?: string;
         } = {
           kyc_status: normalized,
-          kyc_decision: JSON.parse(body),
+          kyc_decision: decisionJson,
         };
         if (normalized === "verified") {
           update.kyc_verified_at = new Date().toISOString();
