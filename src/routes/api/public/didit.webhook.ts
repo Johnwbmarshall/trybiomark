@@ -83,7 +83,7 @@ export const Route = createFileRoute("/api/public/didit/webhook")({
 
         const update: {
           kyc_status: string;
-          kyc_decision: unknown;
+          kyc_decision: typeof payload;
           kyc_verified_at?: string;
         } = {
           kyc_status: normalized,
