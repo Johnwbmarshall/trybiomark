@@ -84,6 +84,9 @@ function RecordPage() {
     queryFn: () => getProfileFn(),
   });
   const hasSelfie = Boolean(profileData?.profile?.selfie_path);
+  const kycStatus = profileData?.profile?.kyc_status ?? "not_started";
+  const kycVerified = kycStatus === "verified";
+  const canRecord = hasSelfie && kycVerified;
 
   // If opened with ?draft=<id>, jump straight to the attach phase using stored paths.
   useEffect(() => {
