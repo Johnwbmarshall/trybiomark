@@ -14,44 +14,101 @@ function siteOrigin(): string {
   );
 }
 
+// Email infrastructure constants — must match
+// src/routes/lovable/email/transactional/send.ts
+const SITE_NAME = "trybiomark";
+const SENDER_DOMAIN = "notify.bio-mark.ca";
+const FROM_DOMAIN = "bio-mark.ca";
+
+function generateToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 async function enqueueEmail(args: {
   templateName: string;
   recipientEmail: string;
   templateData: Record<string, unknown>;
   idempotencyKey?: string;
 }) {
-  // Render template -> enqueue via existing auth_emails-style RPC. The
-  // existing transactional send route handles rendering + enqueue, but
-  // it requires a user JWT. From the server we use the same primitives
-  // directly via the admin client + the email-js renderer.
   const entry = TEMPLATES[args.templateName];
   if (!entry) throw new Error(`Unknown email template: ${args.templateName}`);
 
+  const recipient = (entry.to ?? args.recipientEmail).trim();
+  const normalizedEmail = recipient.toLowerCase();
+
+  // Suppression check.
+  const { data: suppressed } = await supabaseAdmin
+    .from("suppressed_emails")
+    .select("id")
+    .eq("email", normalizedEmail)
+    .maybeSingle();
+  if (suppressed) return; // silently skip
+
+  // Get-or-create unsubscribe token.
+  let unsubscribeToken: string;
+  const { data: existingToken } = await supabaseAdmin
+    .from("email_unsubscribe_tokens")
+    .select("token, used_at")
+    .eq("email", normalizedEmail)
+    .maybeSingle();
+  if (existingToken && !existingToken.used_at) {
+    unsubscribeToken = existingToken.token;
+  } else {
+    unsubscribeToken = generateToken();
+    await supabaseAdmin
+      .from("email_unsubscribe_tokens")
+      .upsert(
+        { token: unsubscribeToken, email: normalizedEmail },
+        { onConflict: "email", ignoreDuplicates: true },
+      );
+    const { data: stored } = await supabaseAdmin
+      .from("email_unsubscribe_tokens")
+      .select("token")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+    if (stored?.token) unsubscribeToken = stored.token;
+  }
+
+  // Render template.
+  const React = await import("react");
+  const { render } = await import("@react-email/render");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const element = React.createElement(entry.component as any, args.templateData);
+  const html = await render(element);
+  const text = await render(element, { plainText: true });
   const subject =
     typeof entry.subject === "function"
       ? entry.subject(args.templateData)
       : entry.subject;
 
-  // Lazy-import the renderer to keep the server fn slim.
-  const { render } = await import("@react-email/render");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const Component = entry.component as any;
-  const element = Component(args.templateData);
-  const html = await render(element);
-  const text = await render(element, { plainText: true });
+  const messageId = crypto.randomUUID();
+  const idempotencyKey = args.idempotencyKey ?? messageId;
 
-  const payload = {
-    to: entry.to ?? args.recipientEmail,
-    subject,
-    html,
-    text,
+  await supabaseAdmin.from("email_send_log").insert({
+    message_id: messageId,
     template_name: args.templateName,
-    idempotency_key: args.idempotencyKey,
-  };
+    recipient_email: recipient,
+    status: "pending",
+  });
 
   const { error } = await supabaseAdmin.rpc("enqueue_email", {
     queue_name: "transactional_emails",
-    payload,
+    payload: {
+      message_id: messageId,
+      to: recipient,
+      from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
+      sender_domain: SENDER_DOMAIN,
+      subject,
+      html,
+      text,
+      purpose: "transactional",
+      label: args.templateName,
+      idempotency_key: idempotencyKey,
+      unsubscribe_token: unsubscribeToken,
+      queued_at: new Date().toISOString(),
+    },
   });
   if (error) throw new Error(`enqueue_email failed: ${error.message}`);
 }
