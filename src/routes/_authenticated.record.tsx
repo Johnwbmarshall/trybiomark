@@ -12,6 +12,7 @@ import { verifySubmission, type CheckResult } from "@/lib/verification.functions
 import { extractVideoFrames, extractPdfPageImages } from "@/lib/media-sampling";
 import { generateCombinedPdf } from "@/lib/certificate-pdf";
 import { sendTransactionalEmail } from "@/lib/email/send";
+import { submitAppeal } from "@/lib/appeals.functions";
 import { PreflightChecklist } from "@/components/PreflightChecklist";
 import { RecordingControls } from "@/components/RecordingControls";
 import { useQuery } from "@tanstack/react-query";
@@ -78,6 +79,10 @@ function RecordPage() {
   const deleteDraftFn = useServerFn(deleteDraft);
   const getProfileFn = useServerFn(getMyProfile);
   const verifyFn = useServerFn(verifySubmission);
+  const submitAppealFn = useServerFn(submitAppeal);
+  const [appealNote, setAppealNote] = useState("");
+  const [appealing, setAppealing] = useState(false);
+  const [appealSent, setAppealSent] = useState(false);
 
   const { data: profileData, isLoading: profileLoading } = useQuery({
     queryKey: ["my-profile"],
@@ -455,10 +460,87 @@ function RecordPage() {
             </li>
           ))}
         </ul>
-        <div className="mt-8 flex gap-2">
+        <div className="mt-8 rounded-xl border border-border bg-card p-5">
+          <h2 className="font-display text-2xl">Appeal this decision</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            If you believe this was wrong, you can appeal. Your full evidence
+            (screen recording, webcam, and PDF) will be sent to a human
+            reviewer who can reverse or uphold the decision. You'll get an
+            email either way.
+          </p>
+          {appealSent ? (
+            <p className="mt-4 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-400">
+              Appeal submitted. We've emailed the reviewer — you'll hear back by email.
+            </p>
+          ) : (
+            <>
+              <textarea
+                value={appealNote}
+                onChange={(e) => setAppealNote(e.target.value)}
+                placeholder="Optional: add any context for the reviewer…"
+                className="mt-3 w-full min-h-[80px] rounded-md border border-input bg-background p-3 text-sm"
+              />
+              <button
+                disabled={appealing}
+                onClick={async () => {
+                  if (!pending || !pdfFile) {
+                    setErrMsg("Recording or PDF is missing — please retry.");
+                    return;
+                  }
+                  setAppealing(true);
+                  setErrMsg(null);
+                  try {
+                    const { data: userData } = await supabase.auth.getUser();
+                    const user = userData.user;
+                    if (!user) throw new Error("Not signed in.");
+                    const stamp = Date.now();
+                    setUploadMsg("Uploading evidence for appeal…");
+                    const { screenPath, webcamPath } = await ensureUploaded(
+                      user.id,
+                      stamp,
+                    );
+                    const originalPdfPath = `${user.id}/${stamp}-appeal.pdf`;
+                    const up = await supabase.storage
+                      .from("documents")
+                      .upload(originalPdfPath, pdfFile, {
+                        contentType: "application/pdf",
+                      });
+                    if (up.error) throw new Error(up.error.message);
+                    await submitAppealFn({
+                      data: {
+                        projectName: projectName.trim() || "Untitled",
+                        screenVideoPath: screenPath,
+                        webcamVideoPath: webcamPath,
+                        originalPdfPath,
+                        durationSeconds: pending.durationSeconds,
+                        geminiChecks: verification.checks,
+                        geminiSummary: verification.summary,
+                        userNote: appealNote.trim() || undefined,
+                      },
+                    });
+                    setAppealSent(true);
+                  } catch (e) {
+                    setErrMsg(
+                      e instanceof Error ? e.message : "Could not submit appeal.",
+                    );
+                  } finally {
+                    setAppealing(false);
+                  }
+                }}
+                className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                {appealing ? "Submitting…" : "Submit appeal"}
+              </button>
+            </>
+          )}
+        </div>
+        <div className="mt-6 flex gap-2">
           <button
             onClick={() => {
               setVerification(null);
+              setAppealSent(false);
+              setAppealNote("");
               setPhase("attach");
             }}
             className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm hover:bg-accent"
@@ -472,6 +554,7 @@ function RecordPage() {
             <ShieldCheck className="h-4 w-4" /> Back to dashboard
           </Link>
         </div>
+
       </main>
     );
   }
