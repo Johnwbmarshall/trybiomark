@@ -146,6 +146,51 @@ export type Database = {
         }
         Relationships: []
       }
+      evidence_requests: {
+        Row: {
+          certificate_id: string
+          created_at: string
+          decided_at: string | null
+          decision_token: string
+          expires_at: string
+          id: string
+          owner_user_id: string
+          requester_email: string
+          requester_name: string
+          requester_reason: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          certificate_id: string
+          created_at?: string
+          decided_at?: string | null
+          decision_token: string
+          expires_at?: string
+          id?: string
+          owner_user_id: string
+          requester_email: string
+          requester_name: string
+          requester_reason: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          certificate_id?: string
+          created_at?: string
+          decided_at?: string | null
+          decision_token?: string
+          expires_at?: string
+          id?: string
+          owner_user_id?: string
+          requester_email?: string
+          requester_name?: string
+          requester_reason?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

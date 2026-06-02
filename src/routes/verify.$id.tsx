@@ -1,8 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { verifyCertificate } from "@/lib/certificates.functions";
+import { requestEvidence } from "@/lib/evidence.functions";
 import { Check, ShieldCheck, ShieldX, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/verify/$id")({
   head: ({ params }) => ({
@@ -150,10 +157,142 @@ function Found({
         </section>
       )}
 
+      <RequestEvidence
+        certificateId={cert.certificateId}
+        projectName={cert.projectName}
+      />
+
       <p className="mt-10 text-xs text-muted-foreground">
         Recordings are kept private and are never exposed by the public registry.
+        To inspect the original evidence, send a request above — the owner
+        decides whether to release it.
       </p>
     </article>
+  );
+}
+
+function RequestEvidence({
+  certificateId,
+  projectName,
+}: {
+  certificateId: string;
+  projectName: string;
+}) {
+  const fn = useServerFn(requestEvidence);
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [reason, setReason] = useState("");
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (reason.trim().length < 10) {
+      toast.error("Please provide a reason (at least 10 characters).");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await fn({
+        data: {
+          certificateId,
+          requesterName: name.trim(),
+          requesterEmail: email.trim(),
+          reason: reason.trim(),
+        },
+      });
+      setDone(true);
+      toast.success("Request sent. The owner has been notified by email.");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Could not send request.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="mt-12 rounded-xl border border-border bg-card/50 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-xl">Request the original evidence</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Ask the owner of {projectName} to release the original screen
+            recording, webcam video, and PDF. They will be emailed and can
+            approve or deny.
+          </p>
+        </div>
+        {!open && !done ? (
+          <Button onClick={() => setOpen(true)}>Request evidence</Button>
+        ) : null}
+      </div>
+
+      {done ? (
+        <div className="mt-4 rounded-lg border border-border bg-muted/30 p-4 text-sm">
+          Your request has been sent. You'll receive an email at{" "}
+          <strong>{email}</strong> once the owner responds.
+        </div>
+      ) : open ? (
+        <form onSubmit={submit} className="mt-6 grid gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="ev-name">Your name</Label>
+              <Input
+                id="ev-name"
+                required
+                maxLength={120}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Jane Doe"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ev-email">Your email</Label>
+              <Input
+                id="ev-email"
+                type="email"
+                required
+                maxLength={255}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="jane@example.com"
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="ev-reason">Reason for request</Label>
+            <Textarea
+              id="ev-reason"
+              required
+              minLength={10}
+              maxLength={2000}
+              rows={4}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Explain why you'd like to see the original evidence."
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              The owner will see your name, email, and reason.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Sending…" : "Send request"}
+            </Button>
+          </div>
+        </form>
+      ) : null}
+    </section>
   );
 }
 
