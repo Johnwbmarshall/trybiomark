@@ -50,7 +50,7 @@ export const startDiditVerification = createServerFn({ method: "POST" })
       };
     }
 
-    const res = await fetch(`${DIDIT_API_BASE}/v2/session/`, {
+    const res = await fetch(`${DIDIT_API_BASE}/v3/session/`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
