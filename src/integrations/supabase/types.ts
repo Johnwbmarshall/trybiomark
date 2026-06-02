@@ -287,6 +287,75 @@ export type Database = {
         }
         Relationships: []
       }
+      verification_appeals: {
+        Row: {
+          certificate_id: string | null
+          created_at: string
+          decided_at: string | null
+          decision_token: string
+          duration_seconds: number
+          expires_at: string
+          gemini_checks: Json
+          gemini_summary: string
+          id: string
+          original_pdf_path: string
+          project_name: string
+          reviewer_email: string
+          reviewer_notes: string | null
+          screen_video_path: string
+          status: string
+          updated_at: string
+          user_email: string | null
+          user_id: string
+          user_note: string | null
+          webcam_video_path: string
+        }
+        Insert: {
+          certificate_id?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decision_token: string
+          duration_seconds?: number
+          expires_at?: string
+          gemini_checks: Json
+          gemini_summary?: string
+          id?: string
+          original_pdf_path: string
+          project_name: string
+          reviewer_email: string
+          reviewer_notes?: string | null
+          screen_video_path: string
+          status?: string
+          updated_at?: string
+          user_email?: string | null
+          user_id: string
+          user_note?: string | null
+          webcam_video_path: string
+        }
+        Update: {
+          certificate_id?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decision_token?: string
+          duration_seconds?: number
+          expires_at?: string
+          gemini_checks?: Json
+          gemini_summary?: string
+          id?: string
+          original_pdf_path?: string
+          project_name?: string
+          reviewer_email?: string
+          reviewer_notes?: string | null
+          screen_video_path?: string
+          status?: string
+          updated_at?: string
+          user_email?: string | null
+          user_id?: string
+          user_note?: string | null
+          webcam_video_path?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       public_certificates: {
