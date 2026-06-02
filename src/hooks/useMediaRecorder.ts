@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { logMicCaptureError } from "@/components/MicTroubleshootPanel";
 
 export type RecorderState =
   | "idle"
@@ -165,10 +166,17 @@ export function useMediaRecorder() {
       // not request system audio because on some multi-monitor setups it can
       // grab or suppress the default input device, leaving the pre-flight mic
       // meter with a live-but-silent microphone track.
-      let webcam = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 },
-        audio: microphoneConstraints,
-      });
+      let webcam: MediaStream;
+      try {
+        webcam = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480 },
+          audio: microphoneConstraints,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? `${err.name}: ${err.message}` : "getUserMedia failed";
+        logMicCaptureError(msg);
+        throw err;
+      }
 
       // Detect how many physical monitors the user has via the Window
       // Management API (Chromium-based browsers). The user MUST share every
@@ -244,7 +252,12 @@ export function useMediaRecorder() {
           ...webcam.getVideoTracks(),
           ...refreshedMic.getAudioTracks(),
         ]);
-      } catch {
+      } catch (err) {
+        logMicCaptureError(
+          err instanceof Error
+            ? `mic refresh failed (${err.name}: ${err.message}) — keeping original track`
+            : "mic refresh failed — keeping original track",
+        );
         /* keep the originally granted microphone track */
       }
 
@@ -253,6 +266,12 @@ export function useMediaRecorder() {
 
       screenStreamRef.current = screen;
       webcamStreamRef.current = webcam;
+
+      // Surface mic track lifecycle issues to the troubleshooting panel.
+      webcam.getAudioTracks().forEach((t) => {
+        t.onmute = () => logMicCaptureError(`mic track muted by system (${t.label || "default"})`);
+        t.onended = () => logMicCaptureError(`mic track ended unexpectedly (${t.label || "default"})`);
+      });
 
       const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
         ? "video/webm;codecs=vp9,opus"

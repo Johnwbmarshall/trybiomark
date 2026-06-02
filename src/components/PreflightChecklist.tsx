@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Check, Loader2, X, Camera, Mic, MonitorPlay, RotateCw } from "lucide-react";
 import { checkHumanInFrame } from "@/lib/vision.functions";
 import { useAudioLevel } from "@/hooks/useAudioLevel";
+import { MicTroubleshootPanel } from "./MicTroubleshootPanel";
 
 interface Props {
   screenStream: MediaStream | null;
@@ -171,6 +172,7 @@ export function PreflightChecklist({
               ) : null
             }
           />
+          <MicTroubleshootPanel webcamStream={webcamStream} audioLevel={audioLevel} />
           <CheckRow
             icon={<MonitorPlay className="h-4 w-4" />}
             title="The right screen is being shared"
