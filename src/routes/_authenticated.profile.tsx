@@ -201,6 +201,75 @@ function ProfilePage() {
         It's stored privately and never shown publicly.
       </p>
 
+      {/* KYC verification card */}
+      <section className="mt-8 rounded-xl border border-border bg-card p-6">
+        <div className="flex items-start gap-4">
+          <div className="rounded-lg bg-primary/10 p-3 text-primary">
+            <ShieldCheck className="h-6 w-6" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <h2 className="font-display text-xl">Identity verification</h2>
+              <KycBadge status={kycStatus} />
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Verify your government-issued ID and a live selfie through our
+              partner Didit. This is required before you can issue certified
+              recordings.
+            </p>
+
+            {kycStatus === "verified" ? (
+              <div className="mt-4 flex items-center gap-2 text-sm text-emerald-400">
+                <Check className="h-4 w-4" />
+                Identity verified
+                {profileData?.profile?.kyc_verified_at && (
+                  <span className="text-muted-foreground">
+                    · {new Date(profileData.profile.kyc_verified_at).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            ) : kycStatus === "in_progress" ||
+              kycStatus === "in_review" ||
+              kycStatus === "pending" ? (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {kycStatus === "in_review"
+                    ? "Under review — we'll update this automatically."
+                    : "Verification in progress…"}
+                </div>
+                {kycSessionUrl && (
+                  <a
+                    href={kycSessionUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-xs hover:bg-accent"
+                  >
+                    Resume verification
+                  </a>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={startKyc}
+                disabled={kycStarting}
+                className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+              >
+                {kycStarting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ShieldCheck className="h-4 w-4" />
+                )}
+                {kycStatus === "declined"
+                  ? "Retry verification"
+                  : "Verify identity"}
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+
       {existingSelfiePath && !capturedDataUrl && !streamReady && (
         <div className="mt-8 rounded-xl border border-border bg-card p-6">
           <div className="flex items-start gap-6">
