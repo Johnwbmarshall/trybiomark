@@ -28,12 +28,57 @@ function ProfilePage() {
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null);
+  const [kycStarting, setKycStarting] = useState(false);
+  const [kycWindow, setKycWindow] = useState<Window | null>(null);
 
   const { data: profileData, refetch } = useQuery({
     queryKey: ["my-profile"],
     queryFn: () => getProfileFn(),
+    // Poll while the user is mid-verification so the UI flips to "verified"
+    // as soon as the webhook updates the row.
+    refetchInterval: (q) => {
+      const s = q.state.data?.profile?.kyc_status;
+      return s === "in_progress" || s === "in_review" || s === "pending"
+        ? 4000
+        : false;
+    },
   });
   const existingSelfiePath = profileData?.profile?.selfie_path ?? null;
+  const kycStatus = profileData?.profile?.kyc_status ?? "not_started";
+  const kycSessionUrl = profileData?.profile?.kyc_session_url ?? null;
+
+  const startKyc = async () => {
+    setErr(null);
+    setKycStarting(true);
+    try {
+      const res = await startKycFn();
+      // Open in a popup window so the user stays on our page.
+      const w = window.open(
+        res.url,
+        "didit-kyc",
+        "width=480,height=720,noopener,noreferrer",
+      );
+      setKycWindow(w);
+      await refetch();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not start verification.");
+    } finally {
+      setKycStarting(false);
+    }
+  };
+
+  // Detect when the KYC popup is closed and refresh status.
+  useEffect(() => {
+    if (!kycWindow) return;
+    const t = setInterval(() => {
+      if (kycWindow.closed) {
+        clearInterval(t);
+        setKycWindow(null);
+        void refetch();
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [kycWindow, refetch]);
 
   // Fetch signed URL for current selfie
   useEffect(() => {
