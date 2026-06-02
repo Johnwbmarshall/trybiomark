@@ -2,9 +2,10 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { Camera, RefreshCw, Check } from "lucide-react";
+import { Camera, RefreshCw, Check, ShieldCheck, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getMyProfile, setProfileSelfie } from "@/lib/profile.functions";
+import { startDiditVerification } from "@/lib/didit.functions";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({ meta: [{ title: "Your profile — Bio Mark" }] }),
@@ -15,6 +16,7 @@ function ProfilePage() {
   const navigate = useNavigate();
   const getProfileFn = useServerFn(getMyProfile);
   const setSelfieFn = useServerFn(setProfileSelfie);
+  const startKycFn = useServerFn(startDiditVerification);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -26,12 +28,57 @@ function ProfilePage() {
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null);
+  const [kycStarting, setKycStarting] = useState(false);
+  const [kycWindow, setKycWindow] = useState<Window | null>(null);
 
   const { data: profileData, refetch } = useQuery({
     queryKey: ["my-profile"],
     queryFn: () => getProfileFn(),
+    // Poll while the user is mid-verification so the UI flips to "verified"
+    // as soon as the webhook updates the row.
+    refetchInterval: (q) => {
+      const s = q.state.data?.profile?.kyc_status;
+      return s === "in_progress" || s === "in_review" || s === "pending"
+        ? 4000
+        : false;
+    },
   });
   const existingSelfiePath = profileData?.profile?.selfie_path ?? null;
+  const kycStatus = profileData?.profile?.kyc_status ?? "not_started";
+  const kycSessionUrl = profileData?.profile?.kyc_session_url ?? null;
+
+  const startKyc = async () => {
+    setErr(null);
+    setKycStarting(true);
+    try {
+      const res = await startKycFn();
+      // Open in a popup window so the user stays on our page.
+      const w = window.open(
+        res.url,
+        "didit-kyc",
+        "width=480,height=720,noopener,noreferrer",
+      );
+      setKycWindow(w);
+      await refetch();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not start verification.");
+    } finally {
+      setKycStarting(false);
+    }
+  };
+
+  // Detect when the KYC popup is closed and refresh status.
+  useEffect(() => {
+    if (!kycWindow) return;
+    const t = setInterval(() => {
+      if (kycWindow.closed) {
+        clearInterval(t);
+        setKycWindow(null);
+        void refetch();
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [kycWindow, refetch]);
 
   // Fetch signed URL for current selfie
   useEffect(() => {
@@ -154,6 +201,75 @@ function ProfilePage() {
         It's stored privately and never shown publicly.
       </p>
 
+      {/* KYC verification card */}
+      <section className="mt-8 rounded-xl border border-border bg-card p-6">
+        <div className="flex items-start gap-4">
+          <div className="rounded-lg bg-primary/10 p-3 text-primary">
+            <ShieldCheck className="h-6 w-6" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <h2 className="font-display text-xl">Identity verification</h2>
+              <KycBadge status={kycStatus} />
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Verify your government-issued ID and a live selfie through our
+              partner Didit. This is required before you can issue certified
+              recordings.
+            </p>
+
+            {kycStatus === "verified" ? (
+              <div className="mt-4 flex items-center gap-2 text-sm text-emerald-400">
+                <Check className="h-4 w-4" />
+                Identity verified
+                {profileData?.profile?.kyc_verified_at && (
+                  <span className="text-muted-foreground">
+                    · {new Date(profileData.profile.kyc_verified_at).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            ) : kycStatus === "in_progress" ||
+              kycStatus === "in_review" ||
+              kycStatus === "pending" ? (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {kycStatus === "in_review"
+                    ? "Under review — we'll update this automatically."
+                    : "Verification in progress…"}
+                </div>
+                {kycSessionUrl && (
+                  <a
+                    href={kycSessionUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-xs hover:bg-accent"
+                  >
+                    Resume verification
+                  </a>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={startKyc}
+                disabled={kycStarting}
+                className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+              >
+                {kycStarting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ShieldCheck className="h-4 w-4" />
+                )}
+                {kycStatus === "declined"
+                  ? "Retry verification"
+                  : "Verify identity"}
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+
       {existingSelfiePath && !capturedDataUrl && !streamReady && (
         <div className="mt-8 rounded-xl border border-border bg-card p-6">
           <div className="flex items-start gap-6">
@@ -271,5 +387,42 @@ function ProfilePage() {
 
       <canvas ref={canvasRef} className="hidden" />
     </main>
+  );
+}
+
+function KycBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    verified: {
+      label: "Verified",
+      cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    },
+    in_progress: {
+      label: "In progress",
+      cls: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    },
+    pending: {
+      label: "In progress",
+      cls: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    },
+    in_review: {
+      label: "In review",
+      cls: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    },
+    declined: {
+      label: "Declined",
+      cls: "bg-destructive/10 text-destructive border-destructive/20",
+    },
+    not_started: {
+      label: "Not started",
+      cls: "bg-muted text-muted-foreground border-border",
+    },
+  };
+  const s = map[status] ?? map.not_started;
+  return (
+    <span
+      className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${s.cls}`}
+    >
+      {s.label}
+    </span>
   );
 }

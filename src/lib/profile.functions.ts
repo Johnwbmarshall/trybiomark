@@ -8,7 +8,9 @@ export const getMyProfile = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, selfie_path, created_at, updated_at")
+      .select(
+        "id, selfie_path, created_at, updated_at, kyc_status, kyc_session_id, kyc_session_url, kyc_verified_at",
+      )
       .eq("user_id", userId)
       .maybeSingle();
     if (error) throw new Error(error.message);
