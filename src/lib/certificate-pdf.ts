@@ -2,11 +2,21 @@ import jsPDF from "jspdf";
 import QRCode from "qrcode";
 import { PDFDocument } from "pdf-lib";
 
+export interface VerificationCheck {
+  key: string;
+  label: string;
+  passed: boolean;
+  confidence: "low" | "medium" | "high";
+  reason: string;
+}
+
 export interface CertificatePdfData {
   certificateId: string;
   projectName: string;
   createdAt: string;
   ownerEmail?: string | null;
+  checks?: VerificationCheck[];
+  summary?: string;
 }
 
 async function buildCertificatePdfBytes(data: CertificatePdfData): Promise<Uint8Array> {
