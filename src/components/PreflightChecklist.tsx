@@ -167,7 +167,8 @@ export function PreflightChecklist({
                   <div
                     className="h-full bg-gold transition-[width] duration-75"
                     style={{ width: `${audioPct}%` }}
-                  />
+          />
+          <MicTroubleshootPanel webcamStream={webcamStream} audioLevel={audioLevel} />
                 </div>
               ) : null
             }
