@@ -330,6 +330,8 @@ function RecordPage() {
         projectName: cert.projectName,
         createdAt: cert.createdAt,
         ownerEmail: user.email ?? null,
+        checks: verdict.checks,
+        summary: verdict.summary,
       });
 
       const combinedPdfPath = `${user.id}/${stamp}-${cert.certificateId}-combined.pdf`;

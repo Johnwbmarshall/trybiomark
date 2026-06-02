@@ -2,11 +2,21 @@ import jsPDF from "jspdf";
 import QRCode from "qrcode";
 import { PDFDocument } from "pdf-lib";
 
+export interface VerificationCheck {
+  key: string;
+  label: string;
+  passed: boolean;
+  confidence: "low" | "medium" | "high";
+  reason: string;
+}
+
 export interface CertificatePdfData {
   certificateId: string;
   projectName: string;
   createdAt: string;
   ownerEmail?: string | null;
+  checks?: VerificationCheck[];
+  summary?: string;
 }
 
 async function buildCertificatePdfBytes(data: CertificatePdfData): Promise<Uint8Array> {
@@ -97,6 +107,107 @@ async function buildCertificatePdfBytes(data: CertificatePdfData): Promise<Uint8
   doc.setFontSize(8);
   doc.setTextColor(110, 110, 120);
   doc.text("Scan to verify", W - 176, 160, { align: "center" });
+
+  // ------- Page 2: Verification checks -------
+  if (data.checks && data.checks.length > 0) {
+    doc.addPage("letter", "portrait");
+    const PW = doc.internal.pageSize.getWidth();
+    const PH = doc.internal.pageSize.getHeight();
+
+    doc.setFillColor(248, 245, 235);
+    doc.rect(0, 0, PW, PH, "F");
+    doc.setDrawColor(28, 36, 70);
+    doc.setLineWidth(1);
+    doc.rect(28, 28, PW - 56, PH - 56);
+
+    doc.setTextColor(28, 36, 70);
+    doc.setFont("times", "italic");
+    doc.setFontSize(26);
+    doc.text("Verification Report", PW / 2, 90, { align: "center" });
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(80, 80, 90);
+    doc.text(
+      `Certificate ${data.certificateId} · ${data.projectName}`,
+      PW / 2,
+      110,
+      { align: "center" },
+    );
+
+    doc.setFontSize(9);
+    doc.setTextColor(110, 110, 120);
+    doc.text(
+      "The following automated checks were performed on the recorded session and the submitted document.",
+      PW / 2,
+      128,
+      { align: "center", maxWidth: PW - 120 },
+    );
+
+    let y = 160;
+    const leftX = 60;
+    const rightX = PW - 60;
+    data.checks.forEach((c, i) => {
+      const status = c.passed ? "PASS" : "FAIL";
+      const statusColor: [number, number, number] = c.passed
+        ? [40, 120, 70]
+        : [170, 50, 50];
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(28, 36, 70);
+      const labelLines = doc.splitTextToSize(`${i + 1}. ${c.label}`, rightX - leftX - 70);
+      doc.text(labelLines, leftX, y);
+
+      doc.setTextColor(...statusColor);
+      doc.setFontSize(10);
+      doc.text(status, rightX, y, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(110, 110, 120);
+      doc.text(`confidence: ${c.confidence}`, rightX, y + 12, { align: "right" });
+
+      const labelH = labelLines.length * 13;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(70, 70, 80);
+      const reasonLines = doc.splitTextToSize(c.reason, rightX - leftX - 70);
+      doc.text(reasonLines, leftX, y + labelH + 4);
+
+      y += labelH + reasonLines.length * 11 + 18;
+
+      if (y > PH - 100 && i < data.checks!.length - 1) {
+        doc.addPage("letter", "portrait");
+        doc.setFillColor(248, 245, 235);
+        doc.rect(0, 0, PW, PH, "F");
+        doc.setDrawColor(28, 36, 70);
+        doc.setLineWidth(1);
+        doc.rect(28, 28, PW - 56, PH - 56);
+        y = 60;
+      }
+    });
+
+    if (data.summary) {
+      if (y > PH - 140) {
+        doc.addPage("letter", "portrait");
+        doc.setFillColor(248, 245, 235);
+        doc.rect(0, 0, PW, PH, "F");
+        doc.setDrawColor(28, 36, 70);
+        doc.setLineWidth(1);
+        doc.rect(28, 28, PW - 56, PH - 56);
+        y = 60;
+      }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(28, 36, 70);
+      doc.text("Summary", leftX, y + 10);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(70, 70, 80);
+      const sumLines = doc.splitTextToSize(data.summary, rightX - leftX);
+      doc.text(sumLines, leftX, y + 26);
+    }
+  }
 
   return new Uint8Array(doc.output("arraybuffer"));
 }

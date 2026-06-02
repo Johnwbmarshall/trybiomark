@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { verifyCertificate } from "@/lib/certificates.functions";
-import { ShieldCheck, ShieldX } from "lucide-react";
+import { Check, ShieldCheck, ShieldX, X } from "lucide-react";
 
 export const Route = createFileRoute("/verify/$id")({
   head: ({ params }) => ({
@@ -53,6 +53,14 @@ function Found({
     createdAt: string;
     verificationStatus: string;
     durationSeconds: number;
+    checks: Array<{
+      key: string;
+      label: string;
+      passed: boolean;
+      confidence: "low" | "medium" | "high";
+      reason: string;
+    }>;
+    summary: string;
   };
 }) {
   const date = new Date(cert.createdAt).toLocaleDateString(undefined, {
@@ -94,6 +102,53 @@ function Found({
           <dd className="mt-1 text-lg">{Math.max(1, Math.round(cert.durationSeconds / 60))} min</dd>
         </div>
       </dl>
+
+      {cert.checks.length > 0 && (
+        <section className="mt-12">
+          <h2 className="font-display text-2xl">Verification report</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Automated checks performed on the recorded session and submitted document.
+          </p>
+          <ul className="mt-6 space-y-4">
+            {cert.checks.map((c, i) => (
+              <li
+                key={c.key}
+                className="rounded-xl border border-border bg-card/50 p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                      c.passed
+                        ? "bg-emerald-500/15 text-emerald-600"
+                        : "bg-destructive/15 text-destructive"
+                    }`}
+                    aria-hidden
+                  >
+                    {c.passed ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="text-sm font-medium">
+                        {i + 1}. {c.label}
+                      </p>
+                      <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                        {c.confidence} confidence
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">{c.reason}</p>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {cert.summary && (
+            <div className="mt-6 rounded-xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">Summary. </span>
+              {cert.summary}
+            </div>
+          )}
+        </section>
+      )}
 
       <p className="mt-10 text-xs text-muted-foreground">
         Recordings are kept private and are never exposed by the public registry.
