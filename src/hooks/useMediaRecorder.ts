@@ -217,7 +217,7 @@ export function useMediaRecorder() {
         }
         try {
           monitorStreams.push(await captureMonitor());
-        } catch (e) {
+        } catch {
           // If the user cancels or denies the picker, abort — partial captures
           // are not allowed.
           throw new Error(
