@@ -150,6 +150,11 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          kyc_decision: Json | null
+          kyc_session_id: string | null
+          kyc_session_url: string | null
+          kyc_status: string
+          kyc_verified_at: string | null
           selfie_path: string | null
           updated_at: string
           user_id: string
@@ -157,6 +162,11 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          kyc_decision?: Json | null
+          kyc_session_id?: string | null
+          kyc_session_url?: string | null
+          kyc_status?: string
+          kyc_verified_at?: string | null
           selfie_path?: string | null
           updated_at?: string
           user_id: string
@@ -164,6 +174,11 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          kyc_decision?: Json | null
+          kyc_session_id?: string | null
+          kyc_session_url?: string | null
+          kyc_status?: string
+          kyc_verified_at?: string | null
           selfie_path?: string | null
           updated_at?: string
           user_id?: string
