@@ -166,10 +166,17 @@ export function useMediaRecorder() {
       // not request system audio because on some multi-monitor setups it can
       // grab or suppress the default input device, leaving the pre-flight mic
       // meter with a live-but-silent microphone track.
-      let webcam = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 },
-        audio: microphoneConstraints,
-      });
+      let webcam: MediaStream;
+      try {
+        webcam = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480 },
+          audio: microphoneConstraints,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? `${err.name}: ${err.message}` : "getUserMedia failed";
+        logMicCaptureError(msg);
+        throw err;
+      }
 
       // Detect how many physical monitors the user has via the Window
       // Management API (Chromium-based browsers). The user MUST share every
