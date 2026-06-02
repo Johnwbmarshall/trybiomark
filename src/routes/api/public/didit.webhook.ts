@@ -81,7 +81,11 @@ export const Route = createFileRoute("/api/public/didit/webhook")({
                 ? "in_review"
                 : "in_progress";
 
-        const update: Record<string, unknown> = {
+        const update: {
+          kyc_status: string;
+          kyc_decision: unknown;
+          kyc_verified_at?: string;
+        } = {
           kyc_status: normalized,
           kyc_decision: payload,
         };
