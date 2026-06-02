@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { verifyCertificate } from "@/lib/certificates.functions";
-import { ShieldCheck, ShieldX } from "lucide-react";
+import { Check, ShieldCheck, ShieldX, X } from "lucide-react";
 
 export const Route = createFileRoute("/verify/$id")({
   head: ({ params }) => ({
