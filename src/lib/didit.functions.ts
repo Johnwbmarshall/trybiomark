@@ -23,14 +23,11 @@ export const startDiditVerification = createServerFn({ method: "POST" })
     // If user already has an open / pending session, reuse it.
     const { data: existing } = await supabase
       .from("profiles")
-      .select("kyc_status, kyc_session_id, kyc_session_url")
+      .select("kyc_status, kyc_session_id, kyc_session_url, selfie_path")
       .eq("user_id", userId)
       .maybeSingle();
 
-    if (
-      existing?.kyc_status === "verified" &&
-      existing?.kyc_session_url
-    ) {
+    if (existing?.kyc_status === "verified" && existing?.kyc_session_url) {
       return {
         sessionId: existing.kyc_session_id,
         url: existing.kyc_session_url,
@@ -40,8 +37,7 @@ export const startDiditVerification = createServerFn({ method: "POST" })
 
     if (
       existing?.kyc_session_url &&
-      (existing.kyc_status === "in_progress" ||
-        existing.kyc_status === "pending")
+      (existing.kyc_status === "in_progress" || existing.kyc_status === "pending")
     ) {
       return {
         sessionId: existing.kyc_session_id,
@@ -49,6 +45,20 @@ export const startDiditVerification = createServerFn({ method: "POST" })
         status: existing.kyc_status,
       };
     }
+
+    if (!existing?.selfie_path) {
+      throw new Error("Save your identity selfie before starting verification.");
+    }
+
+    const { data: selfieBlob, error: selfieErr } = await supabaseAdmin.storage
+      .from("selfies")
+      .download(existing.selfie_path);
+    if (selfieErr || !selfieBlob) {
+      throw new Error("Could not load your saved selfie for verification.");
+    }
+
+    const selfieBytes = await selfieBlob.arrayBuffer();
+    const portraitImage = Buffer.from(selfieBytes).toString("base64");
 
     const res = await fetch(`${DIDIT_API_BASE}/v3/session/`, {
       method: "POST",
@@ -59,15 +69,14 @@ export const startDiditVerification = createServerFn({ method: "POST" })
       body: JSON.stringify({
         workflow_id: workflowId,
         vendor_data: userId,
+        portrait_image: portraitImage,
       }),
     });
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       console.error("Didit session create failed:", res.status, text);
-      throw new Error(
-        `Could not start identity verification (${res.status}).`,
-      );
+      throw new Error(`Could not start identity verification (${res.status}).`);
     }
 
     const json = (await res.json()) as {
@@ -81,17 +90,15 @@ export const startDiditVerification = createServerFn({ method: "POST" })
     }
 
     // Use admin client so we can update regardless of any future RLS tightening.
-    const { error: upErr } = await supabaseAdmin
-      .from("profiles")
-      .upsert(
-        {
-          user_id: userId,
-          kyc_status: "in_progress",
-          kyc_session_id: json.session_id,
-          kyc_session_url: json.url,
-        },
-        { onConflict: "user_id" },
-      );
+    const { error: upErr } = await supabaseAdmin.from("profiles").upsert(
+      {
+        user_id: userId,
+        kyc_status: "in_progress",
+        kyc_session_id: json.session_id,
+        kyc_session_url: json.url,
+      },
+      { onConflict: "user_id" },
+    );
     if (upErr) throw new Error(upErr.message);
 
     return {
