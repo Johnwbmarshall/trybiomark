@@ -17,6 +17,24 @@ export const createCertificate = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
+    // Defense in depth: don't issue certificates for users whose identity
+    // hasn't been verified through Didit. The UI also blocks this.
+    const { data: profile, error: profileErr } = await supabase
+      .from("profiles")
+      .select("kyc_status, selfie_path")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (profileErr) throw new Error(profileErr.message);
+    if (!profile?.selfie_path) {
+      throw new Error("Add a verification selfie to your profile first.");
+    }
+    if (profile.kyc_status !== "verified") {
+      throw new Error(
+        "Complete identity verification on your profile before creating a project.",
+      );
+    }
+
+
     // Try a few times in the extremely unlikely event of a collision
     for (let attempt = 0; attempt < 5; attempt++) {
       const certificateId = generateCertificateId();
