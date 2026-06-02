@@ -17,10 +17,15 @@ export interface CertificatePdfData {
   ownerEmail?: string | null;
   checks?: VerificationCheck[];
   summary?: string;
+  /** Override origin used for the verify link/QR. Required when running in non-browser environments. */
+  baseUrl?: string;
 }
 
 async function buildCertificatePdfBytes(data: CertificatePdfData): Promise<Uint8Array> {
-  const verifyUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/verify/${data.certificateId}`;
+  const origin =
+    data.baseUrl ??
+    (typeof window !== "undefined" ? window.location.origin : "https://bio-mark.ca");
+  const verifyUrl = `${origin}/verify/${data.certificateId}`;
   const qrDataUrl = await QRCode.toDataURL(verifyUrl, { margin: 0, width: 240 });
 
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "letter" });
