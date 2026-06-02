@@ -389,3 +389,40 @@ function ProfilePage() {
     </main>
   );
 }
+
+function KycBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    verified: {
+      label: "Verified",
+      cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    },
+    in_progress: {
+      label: "In progress",
+      cls: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    },
+    pending: {
+      label: "In progress",
+      cls: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    },
+    in_review: {
+      label: "In review",
+      cls: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    },
+    declined: {
+      label: "Declined",
+      cls: "bg-destructive/10 text-destructive border-destructive/20",
+    },
+    not_started: {
+      label: "Not started",
+      cls: "bg-muted text-muted-foreground border-border",
+    },
+  };
+  const s = map[status] ?? map.not_started;
+  return (
+    <span
+      className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${s.cls}`}
+    >
+      {s.label}
+    </span>
+  );
+}
