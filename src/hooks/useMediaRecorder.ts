@@ -14,6 +14,12 @@ export interface RecordingResult {
   durationSeconds: number;
 }
 
+const microphoneConstraints: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
+
 export function useMediaRecorder() {
   const [state, setState] = useState<RecorderState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +63,11 @@ export function useMediaRecorder() {
         frameRate: 30,
         displaySurface: "monitor",
       },
-      audio: true,
+      // Microphone audio is captured on the webcam stream. Do not request
+      // screen/system audio here: on some multi-monitor setups that can grab
+      // or suppress the default input device, leaving the pre-flight mic meter
+      // with a live-but-silent microphone track.
+      audio: false,
       // Chromium-only hints to bias the picker toward entire-screen
       ...({
         monitorTypeSurfaces: "include",
@@ -157,13 +167,9 @@ export function useMediaRecorder() {
       // and the subsequent getUserMedia mic track ends up silent — which is
       // why the pre-flight mic check stops detecting audio after sharing the
       // entire screen. Claiming the mic first avoids that race.
-      const webcam = await navigator.mediaDevices.getUserMedia({
+      let webcam = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+        audio: microphoneConstraints,
       });
 
       // Detect how many physical monitors the user has via the Window
@@ -226,6 +232,23 @@ export function useMediaRecorder() {
         }
       }
 
+      // Re-open the microphone after display capture as a best-effort guard
+      // against browsers/OS audio stacks that re-route inputs while the user is
+      // sharing multiple entire screens. Permission was already requested from
+      // the initial user gesture above, so this should not add another prompt;
+      // if it fails, keep the original mic track rather than aborting.
+      try {
+        const refreshedMic = await navigator.mediaDevices.getUserMedia({
+          audio: microphoneConstraints,
+        });
+        webcam.getAudioTracks().forEach((t) => t.stop());
+        webcam = new MediaStream([
+          ...webcam.getVideoTracks(),
+          ...refreshedMic.getAudioTracks(),
+        ]);
+      } catch {
+        /* keep the originally granted microphone track */
+      }
 
       screenSourceStreamsRef.current = monitorStreams;
       const screen = composeScreens(monitorStreams);
