@@ -79,6 +79,10 @@ function RecordPage() {
   const deleteDraftFn = useServerFn(deleteDraft);
   const getProfileFn = useServerFn(getMyProfile);
   const verifyFn = useServerFn(verifySubmission);
+  const submitAppealFn = useServerFn(submitAppeal);
+  const [appealNote, setAppealNote] = useState("");
+  const [appealing, setAppealing] = useState(false);
+  const [appealSent, setAppealSent] = useState(false);
 
   const { data: profileData, isLoading: profileLoading } = useQuery({
     queryKey: ["my-profile"],
