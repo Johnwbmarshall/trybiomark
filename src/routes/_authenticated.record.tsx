@@ -492,6 +492,43 @@ function RecordPage() {
             </div>
           )}
 
+          {!profileLoading && hasSelfie && !kycVerified && (
+            <div className="mt-8 rounded-xl border border-gold/40 bg-gold/5 p-5">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="h-5 w-5 mt-0.5 text-gold" />
+                <div>
+                  <p className="font-medium">
+                    {kycStatus === "in_progress" ||
+                    kycStatus === "in_review" ||
+                    kycStatus === "pending"
+                      ? "Identity verification in progress"
+                      : kycStatus === "declined"
+                        ? "Identity verification was declined"
+                        : "Verify your identity to continue"}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Before your first project, we verify your government ID and
+                    a live selfie through our partner Didit. This protects every
+                    certificate you issue.
+                  </p>
+                  <Link
+                    to="/profile"
+                    className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    {kycStatus === "in_progress" ||
+                    kycStatus === "in_review" ||
+                    kycStatus === "pending"
+                      ? "Check verification status"
+                      : kycStatus === "declined"
+                        ? "Retry verification"
+                        : "Verify identity"}
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
           <label className="mt-10 block text-sm font-medium">Project name</label>
           <input
             value={projectName}
@@ -499,7 +536,7 @@ function RecordPage() {
             placeholder="e.g. Album cover — Aurora"
             className="mt-2 w-full rounded-md border border-input bg-card px-4 py-3 outline-none focus:ring-2 focus:ring-ring"
             maxLength={120}
-            disabled={!hasSelfie}
+            disabled={!canRecord}
           />
 
           {errMsg && (
@@ -509,7 +546,7 @@ function RecordPage() {
           )}
           <button
             onClick={handleStart}
-            disabled={!hasSelfie}
+            disabled={!canRecord}
             className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Video className="h-4 w-4" />
