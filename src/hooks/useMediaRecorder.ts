@@ -151,16 +151,37 @@ export function useMediaRecorder() {
     setError(null);
     setState("requesting");
     try {
+      // Request the webcam (with mic) FIRST. If we request screen capture with
+      // `audio: true` before the mic, Chrome on some OSes (notably Windows)
+      // takes exclusive control of the default audio device for system audio
+      // and the subsequent getUserMedia mic track ends up silent — which is
+      // why the pre-flight mic check stops detecting audio after sharing the
+      // entire screen. Claiming the mic first avoids that race.
+      const webcam = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
       const monitorStreams: MediaStream[] = [];
       monitorStreams.push(await captureMonitor());
 
-      // Offer to capture additional monitors (multi-display setups).
-      // Each additional monitor needs its own picker selection.
+      // Multi-monitor capture is OPTIONAL. The verification step is designed
+      // to identify the user's active "working document" among whatever
+      // surfaces are shared, and reference material left open on other
+      // monitors is explicitly allowed. Only OFFER to add more monitors —
+      // never block recording when extra monitors aren't shared.
       // eslint-disable-next-line no-constant-condition
       while (true) {
         const more = window.confirm(
           `Captured ${monitorStreams.length} screen${monitorStreams.length > 1 ? "s" : ""}. ` +
-            "Do you have another monitor to capture? Click OK to add it, Cancel to continue.",
+            "Optional: share another monitor? It's fine to leave reference " +
+            "documents open on monitors you don't share — Bio Mark will " +
+            "identify the document you're actively working on. Click OK to " +
+            "add another monitor, or Cancel to continue.",
         );
         if (!more) break;
         try {
@@ -174,10 +195,6 @@ export function useMediaRecorder() {
       screenSourceStreamsRef.current = monitorStreams;
       const screen = composeScreens(monitorStreams);
 
-      const webcam = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 },
-        audio: true,
-      });
       screenStreamRef.current = screen;
       webcamStreamRef.current = webcam;
 
