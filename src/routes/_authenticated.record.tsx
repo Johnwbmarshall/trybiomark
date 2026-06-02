@@ -144,6 +144,12 @@ function RecordPage() {
       setErrMsg("Add a verification selfie to your profile before recording.");
       return;
     }
+    if (!kycVerified) {
+      setErrMsg(
+        "Complete identity verification on your profile before creating a project.",
+      );
+      return;
+    }
     if (!projectName.trim()) {
       setErrMsg("Give your project a name first.");
       return;
