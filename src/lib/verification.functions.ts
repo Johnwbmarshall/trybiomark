@@ -14,7 +14,7 @@ const schema = z.object({
     .string()
     .trim()
     .regex(/^CERT-[A-Z0-9-]+$/i, "Invalid certificate id"),
-  screenFrames: z.array(frame).min(1).max(30),
+  screenFrames: z.array(frame).min(1).max(40),
   webcamFrames: z.array(frame).min(1).max(20),
   pdfPageImages: z.array(frame).min(1).max(10),
   // Optional audio (mp3/wav/webm), data URL
