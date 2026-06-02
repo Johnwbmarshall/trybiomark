@@ -20,6 +20,7 @@ export function useAudioLevel(stream: MediaStream | null): number {
         .webkitAudioContext;
     const ctx = new AudioCtx();
     ctxRef.current = ctx;
+    ctx.resume().catch(() => {});
     const source = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
@@ -27,6 +28,7 @@ export function useAudioLevel(stream: MediaStream | null): number {
     const buf = new Uint8Array(analyser.fftSize);
 
     const tick = () => {
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
       analyser.getByteTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) {
