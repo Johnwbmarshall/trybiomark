@@ -127,8 +127,7 @@ export function useMediaRecorder() {
     if (audioTracks.length > 0) {
       const AC: typeof AudioContext =
         window.AudioContext ||
-        // @ts-expect-error - Safari prefix
-        window.webkitAudioContext;
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const audioCtx = new AC();
       const dest = audioCtx.createMediaStreamDestination();
       streams.forEach((s) => {
