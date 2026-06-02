@@ -267,6 +267,12 @@ export function useMediaRecorder() {
       screenStreamRef.current = screen;
       webcamStreamRef.current = webcam;
 
+      // Surface mic track lifecycle issues to the troubleshooting panel.
+      webcam.getAudioTracks().forEach((t) => {
+        t.onmute = () => logMicCaptureError(`mic track muted by system (${t.label || "default"})`);
+        t.onended = () => logMicCaptureError(`mic track ended unexpectedly (${t.label || "default"})`);
+      });
+
       const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
         ? "video/webm;codecs=vp9,opus"
         : "video/webm";
