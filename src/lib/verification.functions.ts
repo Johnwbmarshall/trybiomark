@@ -13,7 +13,8 @@ const schema = z.object({
   certificateId: z
     .string()
     .trim()
-    .regex(/^CERT-[A-Z0-9-]+$/i, "Invalid certificate id"),
+    .regex(/^CERT-[A-Z0-9-]+$/i, "Invalid certificate id")
+    .optional(),
   screenFrames: z.array(frame).min(1).max(40),
   webcamFrames: z.array(frame).min(1).max(20),
   pdfPageImages: z.array(frame).min(1).max(10),
