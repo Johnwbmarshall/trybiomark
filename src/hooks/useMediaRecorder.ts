@@ -20,6 +20,8 @@ export function useMediaRecorder() {
   const [elapsed, setElapsed] = useState(0);
 
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const screenSourceStreamsRef = useRef<MediaStream[]>([]);
+  const compositionCleanupRef = useRef<(() => void) | null>(null);
   const webcamStreamRef = useRef<MediaStream | null>(null);
   const screenRecorderRef = useRef<MediaRecorder | null>(null);
   const webcamRecorderRef = useRef<MediaRecorder | null>(null);
@@ -31,6 +33,10 @@ export function useMediaRecorder() {
 
   const cleanup = useCallback(() => {
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+    screenSourceStreamsRef.current.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+    screenSourceStreamsRef.current = [];
+    compositionCleanupRef.current?.();
+    compositionCleanupRef.current = null;
     webcamStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current = null;
     webcamStreamRef.current = null;
@@ -45,14 +51,129 @@ export function useMediaRecorder() {
   const currentElapsedMs = () =>
     accumulatedRef.current + (runStartedAtRef.current ? Date.now() - runStartedAtRef.current : 0);
 
+  const captureMonitor = async (): Promise<MediaStream> => {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        frameRate: 30,
+        // @ts-expect-error - newer Screen Capture API hints
+        displaySurface: "monitor",
+      },
+      audio: true,
+      // @ts-expect-error - Chromium-only hints to bias toward entire-screen
+      monitorTypeSurfaces: "include",
+      selfBrowserSurface: "exclude",
+      surfaceSwitching: "include",
+    });
+    const track = stream.getVideoTracks()[0];
+    const settings = track.getSettings() as MediaTrackSettings & { displaySurface?: string };
+    if (settings.displaySurface && settings.displaySurface !== "monitor") {
+      stream.getTracks().forEach((t) => t.stop());
+      throw new Error(
+        "Please choose 'Entire Screen' — sharing a window or browser tab is not allowed.",
+      );
+    }
+    return stream;
+  };
+
+  const composeScreens = (streams: MediaStream[]): MediaStream => {
+    if (streams.length === 1) return streams[0];
+
+    // Build a horizontally-tiled composite canvas of all monitor feeds.
+    const videos = streams.map((s) => {
+      const v = document.createElement("video");
+      v.srcObject = s;
+      v.muted = true;
+      v.playsInline = true;
+      v.play().catch(() => {});
+      return v;
+    });
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d")!;
+    let raf = 0;
+
+    const draw = () => {
+      const sizes = videos.map((v) => ({
+        w: v.videoWidth || 1280,
+        h: v.videoHeight || 720,
+      }));
+      const maxH = Math.max(...sizes.map((s) => s.h));
+      const totalW = sizes.reduce((acc, s) => acc + Math.round((s.w * maxH) / s.h), 0);
+      if (canvas.width !== totalW || canvas.height !== maxH) {
+        canvas.width = totalW;
+        canvas.height = maxH;
+      }
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      let x = 0;
+      videos.forEach((v, i) => {
+        const w = Math.round((sizes[i].w * maxH) / sizes[i].h);
+        try {
+          ctx.drawImage(v, x, 0, w, maxH);
+        } catch {
+          /* not ready yet */
+        }
+        x += w;
+      });
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+
+    const composed = (canvas as HTMLCanvasElement).captureStream(30);
+
+    // Mix any audio tracks from screen captures into the composed stream.
+    const audioTracks = streams.flatMap((s) => s.getAudioTracks());
+    if (audioTracks.length > 0) {
+      const AC: typeof AudioContext =
+        window.AudioContext ||
+        // @ts-expect-error - Safari prefix
+        window.webkitAudioContext;
+      const audioCtx = new AC();
+      const dest = audioCtx.createMediaStreamDestination();
+      streams.forEach((s) => {
+        if (s.getAudioTracks().length === 0) return;
+        const src = audioCtx.createMediaStreamSource(new MediaStream(s.getAudioTracks()));
+        src.connect(dest);
+      });
+      dest.stream.getAudioTracks().forEach((t) => composed.addTrack(t));
+      compositionCleanupRef.current = () => {
+        cancelAnimationFrame(raf);
+        audioCtx.close().catch(() => {});
+      };
+    } else {
+      compositionCleanupRef.current = () => cancelAnimationFrame(raf);
+    }
+
+    return composed;
+  };
+
   const start = useCallback(async () => {
     setError(null);
     setState("requesting");
     try {
-      const screen = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 30 },
-        audio: true,
-      });
+      const monitorStreams: MediaStream[] = [];
+      monitorStreams.push(await captureMonitor());
+
+      // Offer to capture additional monitors (multi-display setups).
+      // Each additional monitor needs its own picker selection.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const more = window.confirm(
+          `Captured ${monitorStreams.length} screen${monitorStreams.length > 1 ? "s" : ""}. ` +
+            "Do you have another monitor to capture? Click OK to add it, Cancel to continue.",
+        );
+        if (!more) break;
+        try {
+          monitorStreams.push(await captureMonitor());
+        } catch (e) {
+          if (e instanceof Error && /NotAllowed|denied|cancel/i.test(e.message)) break;
+          throw e;
+        }
+      }
+
+      screenSourceStreamsRef.current = monitorStreams;
+      const screen = composeScreens(monitorStreams);
+
       const webcam = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 },
         audio: true,
@@ -73,10 +194,13 @@ export function useMediaRecorder() {
       screenRec.ondataavailable = (e) => e.data.size && screenChunksRef.current.push(e.data);
       webcamRec.ondataavailable = (e) => e.data.size && webcamChunksRef.current.push(e.data);
 
-      screen.getVideoTracks()[0].onended = () => {
-        if (screenRec.state !== "inactive") screenRec.stop();
-        if (webcamRec.state !== "inactive") webcamRec.stop();
-      };
+      // If the user stops sharing any monitor from the browser bar, end the recording.
+      monitorStreams.forEach((s) => {
+        s.getVideoTracks()[0].onended = () => {
+          if (screenRec.state !== "inactive") screenRec.stop();
+          if (webcamRec.state !== "inactive") webcamRec.stop();
+        };
+      });
 
       screenRecorderRef.current = screenRec;
       webcamRecorderRef.current = webcamRec;
