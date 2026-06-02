@@ -25,10 +25,6 @@ function Landing() {
   return (
     <main>
       <section className="mx-auto max-w-5xl px-6 pt-24 pb-20 text-center">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2 text-sm uppercase tracking-widest text-muted-foreground">
-          <span className="inline-block h-2 w-2 rounded-full bg-gold" />
-          Human-process verification registry
-        </div>
         <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-4 py-1.5 text-xs font-medium text-gold">
           <HandHeart className="h-3.5 w-3.5" />
           100% non-profit — all proceeds support human writing & creative initiatives
