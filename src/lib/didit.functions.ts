@@ -23,7 +23,7 @@ export const startDiditVerification = createServerFn({ method: "POST" })
     // If user already has an open / pending session, reuse it.
     const { data: existing } = await supabase
       .from("profiles")
-      .select("kyc_status, kyc_session_id, kyc_session_url")
+      .select("kyc_status, kyc_session_id, kyc_session_url, selfie_path")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -50,6 +50,20 @@ export const startDiditVerification = createServerFn({ method: "POST" })
       };
     }
 
+    if (!existing?.selfie_path) {
+      throw new Error("Save your identity selfie before starting verification.");
+    }
+
+    const { data: selfieBlob, error: selfieErr } = await supabaseAdmin.storage
+      .from("selfies")
+      .download(existing.selfie_path);
+    if (selfieErr || !selfieBlob) {
+      throw new Error("Could not load your saved selfie for verification.");
+    }
+
+    const selfieBytes = await selfieBlob.arrayBuffer();
+    const portraitImage = Buffer.from(selfieBytes).toString("base64");
+
     const res = await fetch(`${DIDIT_API_BASE}/v3/session/`, {
       method: "POST",
       headers: {
@@ -59,6 +73,7 @@ export const startDiditVerification = createServerFn({ method: "POST" })
       body: JSON.stringify({
         workflow_id: workflowId,
         vendor_data: userId,
+        portrait_image: portraitImage,
       }),
     });
 
