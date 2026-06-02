@@ -12,9 +12,13 @@ export interface TemplateEntry {
 import { template as verificationComplete } from './verification-complete'
 import { template as evidenceRequest } from './evidence-request'
 import { template as evidenceDecision } from './evidence-decision'
+import { template as appealSubmitted } from './appeal-submitted'
+import { template as appealDecision } from './appeal-decision'
 
 export const TEMPLATES: Record<string, TemplateEntry> = {
   'verification-complete': verificationComplete,
   'evidence-request': evidenceRequest,
   'evidence-decision': evidenceDecision,
+  'appeal-submitted': appealSubmitted,
+  'appeal-decision': appealDecision,
 }
