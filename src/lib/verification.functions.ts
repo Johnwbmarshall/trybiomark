@@ -285,7 +285,11 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
     const json = await res.json();
     const argsRaw =
       json?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    let parsed: { checks: Array<Omit<CheckResult, "label">>; summary: string };
+    let parsed: {
+      checks: Array<Omit<CheckResult, "label">>;
+      summary: string;
+      screenEvidence?: string;
+    };
     try {
       parsed = typeof argsRaw === "string" ? JSON.parse(argsRaw) : argsRaw;
     } catch {
@@ -295,7 +299,6 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
       throw new Error("Verification engine returned no checks.");
     }
 
-    // Normalize: ensure all six checks present, attach labels.
     const byKey = new Map(parsed.checks.map((c) => [c.key as CheckKey, c]));
     const checks: CheckResult[] = CHECK_KEYS.map((k) => {
       const found = byKey.get(k);
@@ -310,14 +313,13 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
 
     const allPassed = checks.every((c) => c.passed);
     const status = allPassed ? "verified" : "rejected";
+    const screenEvidence = parsed.screenEvidence ?? "";
 
-    // Only persist verdict if a certificate row already exists. In the new
-    // flow we verify BEFORE issuing the certificate, so on a failed verdict
-    // there's nothing to update — the cert is never created.
     if (data.certificateId) {
       const notes = {
         checks: checks.map((c) => ({ ...c })),
         summary: parsed.summary ?? "",
+        screenEvidence,
       } as unknown as Record<string, unknown>;
       const { error: updErr } = await supabase
         .from("certificates")
@@ -335,6 +337,7 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
       passed: allPassed,
       status,
       summary: parsed.summary ?? "",
+      screenEvidence,
       checks,
     };
   });
