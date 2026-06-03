@@ -349,6 +349,7 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
         checks: checks.map((c) => ({ ...c })),
         summary: parsed.summary ?? "",
         screenEvidence,
+        rawChecks: rawChecks.map((c) => ({ ...c })),
       } as unknown as Record<string, unknown>;
       const { error: updErr } = await supabase
         .from("certificates")
