@@ -160,7 +160,7 @@ function RecordPage() {
       return;
     }
     try {
-      await recorder.start();
+      await recorder.prepare();
       setPhase("checklist");
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "Could not start recording.");
