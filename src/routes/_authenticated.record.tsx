@@ -160,19 +160,15 @@ function RecordPage() {
       return;
     }
     try {
-      await recorder.start();
+      await recorder.prepare();
       setPhase("checklist");
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "Could not start recording.");
     }
   };
 
-  const handleChecklistCancel = async () => {
-    try {
-      await recorder.stop().catch(() => {});
-    } catch {
-      /* noop */
-    }
+  const handleChecklistCancel = () => {
+    recorder.cancel();
     setPhase("setup");
   };
 
@@ -665,7 +661,15 @@ function RecordPage() {
           screenStream={recorder.screenStream}
           webcamStream={recorder.webcamStream}
           onCancel={handleChecklistCancel}
-          onConfirm={() => setPhase("live")}
+          onConfirm={() => {
+            try {
+              recorder.beginRecording();
+              setPhase("live");
+            } catch (e) {
+              setErrMsg(e instanceof Error ? e.message : "Could not start recording.");
+              setPhase("setup");
+            }
+          }}
         />
       )}
 
