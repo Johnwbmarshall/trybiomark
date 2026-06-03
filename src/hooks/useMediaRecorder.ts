@@ -366,12 +366,21 @@ export function useMediaRecorder() {
     });
   }, [cleanup]);
 
+  const cancel = useCallback(() => {
+    cleanup();
+    accumulatedRef.current = 0;
+    runStartedAtRef.current = 0;
+    setElapsed(0);
+    setState("idle");
+  }, [cleanup]);
+
   return {
     state,
     error,
     elapsed,
     prepare,
     beginRecording,
+    cancel,
     pause,
     resume,
     stop,
