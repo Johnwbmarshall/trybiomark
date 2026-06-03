@@ -2,12 +2,20 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const frame = z
+const frameUrl = z
   .string()
   .trim()
   .min(50)
   .max(2_500_000)
   .regex(/^data:image\/(jpeg|png|webp);base64,/);
+
+const timestampedFrame = z.object({
+  dataUrl: frameUrl,
+  timestampSec: z.number().min(0).max(60 * 60 * 24),
+});
+
+// Accept either plain data URLs (legacy) or timestamped frames.
+const frameInput = z.union([frameUrl, timestampedFrame]);
 
 const schema = z.object({
   certificateId: z
@@ -15,10 +23,9 @@ const schema = z.object({
     .trim()
     .regex(/^CERT-[A-Z0-9-]+$/i, "Invalid certificate id")
     .optional(),
-  screenFrames: z.array(frame).min(1).max(40),
-  webcamFrames: z.array(frame).min(1).max(20),
-  pdfPageImages: z.array(frame).min(1).max(10),
-  // Optional audio (mp3/wav/webm), data URL
+  screenFrames: z.array(frameInput).min(1).max(40),
+  webcamFrames: z.array(frameInput).min(1).max(20),
+  pdfPageImages: z.array(frameUrl).min(1).max(10),
   audioDataUrl: z
     .string()
     .regex(/^data:audio\/(mpeg|mp3|wav|webm|ogg);base64,/)
@@ -27,6 +34,26 @@ const schema = z.object({
   durationSeconds: z.number().int().min(0).max(60 * 60 * 24),
   projectName: z.string().trim().min(1).max(120),
 });
+
+function formatStamp(t: number): string {
+  const total = Math.max(0, Math.floor(t));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function normalizeFrame(
+  f: string | { dataUrl: string; timestampSec: number },
+  fallbackIdx: number,
+  total: number,
+  duration: number,
+): { dataUrl: string; timestampSec: number } {
+  if (typeof f === "string") {
+    const t = total > 0 ? ((fallbackIdx + 0.5) / total) * duration : 0;
+    return { dataUrl: f, timestampSec: t };
+  }
+  return f;
+}
 
 const CHECK_KEYS = [
   "document_matches_recording",
@@ -100,57 +127,92 @@ export const verifySubmission = createServerFn({ method: "POST" })
       (k, i) => `  ${i + 1}. ${k} — ${LABELS[k]}`,
     ).join("\n");
 
+    // Normalize frames so every screen/webcam image carries a timestamp.
+    const screenFrames = data.screenFrames.map((f, i) =>
+      normalizeFrame(f, i, data.screenFrames.length, data.durationSeconds),
+    );
+    const webcamFrames = data.webcamFrames.map((f, i) =>
+      normalizeFrame(f, i, data.webcamFrames.length, data.durationSeconds),
+    );
+
     const systemPrompt = `You are the verification engine for Bio Mark, which issues human-authorship certificates.
 You must evaluate a submission across SIX strict checks and call the report tool exactly once with all six results.
 
 CHECKS:
 ${labelEntries}
 
-EVALUATION RULES:
-- For person_matches_selfie: compare the profile selfie image (labeled SELFIE) against the people visible in the WEBCAM frames. Pass only if it is plausibly the same person.
-- For no_other_people_in_frame: if any webcam frame shows additional people, fail.
-- For document_matches_recording and video_and_output_consistent: the SCREEN frames are SPARSE SAMPLES taken at evenly-spaced moments across the whole recording — they are NOT the entire recording, and most of the authoring activity happens BETWEEN the sampled frames. You will NOT see the full PDF text in any frame, and you should NOT expect to. The user may have shared MULTIPLE MONITORS (frames will appear as one wide image with monitors tiled side-by-side) and may also have MULTIPLE WINDOWS open on a single monitor. Your job is to FIRST identify the "working document" — the single editor/IDE/word-processor/notes surface where authoring is actively happening (cursor present, text growing across frames, focused window chrome, scroll position changing, selections being made) — and then evaluate the checks against THAT surface only. Other visible windows, browsers, PDFs, notes apps, chat windows, or content on other monitors are LEGITIMATE REFERENCE MATERIAL and must NOT be treated as evidence of fraud on their own; users are explicitly allowed to consult reference documents while writing. Default to PASS unless there is positive evidence of fraud. Pass with at least medium confidence if ANY frame shows: a plausible working-document surface; any text fragment, heading, code snippet, bullet, table, image, or layout element that resembles ANYTHING in the PDF; recognizable editor chrome; or progressive growth of content across frames. Only FAIL if (a) no frame shows any editor or document-like surface that could be the working document, OR (b) the PDF contains substantial content that is visibly contradicted by the identified working document for the entire recording (e.g. the working surface is a game, a video, or an empty desktop throughout). Reference windows showing similar text on a side monitor are NOT contradictions. Do not penalize for blank/transition frames, dark frames, or frames where focus briefly moves to a reference window.
-- For no_transcription_audio: you do NOT receive audio, so evaluate from visual cues across the WEBCAM frames AND any transcription UI on SCREEN. Perform eye-tracking analysis across the webcam frames: look for the user's gaze repeatedly directed off-screen (especially down to a desk/phone/paper) or above the camera's eyeline while they are actively typing — this is a strong indicator they are transcribing from another document. Sustained, frequent off-screen glances correlated with typing activity = FAIL with medium/high confidence and a reason naming the gaze pattern. Brief, occasional glances away (thinking, normal blinking, looking at a second monitor occasionally) are normal and should PASS. Reference documents visible on screen or on a side monitor are explicitly ALLOWED and are NOT, by themselves, evidence of transcription — only fail if the gaze pattern shows sustained off-screen reading while typing, or if a transcription/dictation app (e.g. Otter, Dragon, live captioning being typed verbatim) is the source. If the user looks consistently at the working-document monitor while typing, PASS with medium confidence. If webcam frames are too few/unclear to judge gaze, PASS with low confidence and reason "insufficient webcam frames to assess gaze".
-- For no_ai_generation_evidence: look for visible AI tools/chat windows/completions panes/“Generate with AI” buttons being used to author the document content. Spell-check or grammar suggestions are fine; ChatGPT/Claude/Copilot-style code or text generation being pasted in is not.
-- Bias toward PASS for ambiguous cases. Only fail a check when there is concrete positive evidence of a problem; "I cannot see the content" is NOT evidence of a problem given the sparse sampling.
-- Each "reason" must be ONE short sentence (max 200 chars) the end user will read.`;
+HOW THE SCREEN EVIDENCE WORKS:
+- The SCREEN frames are SPARSE TIMESTAMPED SAMPLES from a screen recording of the user authoring a document. Each frame is labeled with its timestamp (e.g. "SCREEN @ 0:42"). The frames are NOT the full recording — most authoring activity happens BETWEEN them. End-of-recording frames are sampled more densely so the final document state should usually be visible there.
+- The user may have shared multiple monitors (one wide tiled image) and may have multiple windows open.
+- The Bio Mark recording page itself (a web app showing webcam preview, "Recording" indicator, timer, Pause/Stop buttons, "Pre-flight checklist", "Start Session", or the bio-mark.ca URL) IS NOT the authored document. Treat it the same as any other browser tab — it is the recording tool, not the working surface.
+
+STEP 1 — IDENTIFY THE WORKING DOCUMENT:
+- Scan ALL screen frames and identify the WORKING DOCUMENT: the application/window where authoring is actually happening. Examples: Microsoft Word, Google Docs, Pages, LibreOffice Writer, Apple Notes, Notion, Obsidian, a code editor (VS Code, JetBrains, Xcode, Sublime), a markdown editor, a design tool (Figma, Illustrator), or any equivalent authoring surface.
+- Signals: visible app chrome/toolbar (e.g. "Word", ribbon, formatting bar), a text caret, text or content that grows/changes across timestamps, scroll position changing, selections, file name in title bar.
+- The working document might only appear in a subset of frames (especially the latest ones). That is normal — users often set up the recording in the browser first and then switch to their authoring app.
+- If you find no authoring surface in ANY frame, say so explicitly in screenEvidence and fail document_matches_recording with a clear reason.
+
+STEP 2 — COMPARE START vs END:
+- Look at the EARLIEST frame where the working document is visible and the LATEST frame where it is visible.
+- Describe in screenEvidence: which app it is, what was on screen near the start vs near the end, what visible text fragments / headings / structures you can confirm were authored during the recording, and whether they match the PDF.
+
+STEP 3 — VERDICTS:
+- document_matches_recording: PASS (medium or high) if the working document at the latest visible timestamp shows ANY content that plausibly corresponds to the PDF (matching title, headings, paragraph fragments, layout, code, table, image). PASS with low/medium confidence if a working document is clearly present and being authored but its final state isn't fully readable in the sampled frames. FAIL ONLY if: (a) no authoring surface appears in any frame, OR (b) the latest visible working-document state directly contradicts the PDF (e.g. completely different document, blank doc while PDF has many pages of text, totally unrelated content). Do NOT fail just because you can only see the Bio Mark website in early frames — check the LATER frames for the actual authoring app.
+- video_and_output_consistent: PASS unless the working document shows the PDF's content appearing in a single jump with no intermediate authoring evidence AND there is no plausible explanation (e.g. paste from clipboard with no prior typing). Reference documents on a side monitor, in a browser tab, or in another window are ALLOWED.
+- person_matches_selfie: compare the SELFIE against the WEBCAM frames. Pass only if plausibly the same person.
+- no_other_people_in_frame: fail if any webcam frame shows additional people.
+- no_transcription_audio: no audio is provided. Evaluate from webcam gaze + any visible transcription/dictation UI. Sustained off-screen glances at a desk/paper while typing = FAIL. Glances at a second monitor showing reference material = PASS. If webcam frames are too few/unclear, PASS with low confidence.
+- no_ai_generation_evidence: look for ChatGPT/Claude/Copilot/Gemini chat windows or AI generation panes actively producing the document text. Spell-check, grammar, and basic IDE autocomplete are fine.
+
+GENERAL RULES:
+- Bias toward PASS for ambiguous cases. "I cannot see the full content" is NOT a reason to fail given sparse sampling.
+- Never fail document_matches_recording solely because some frames show the Bio Mark recording UI — that just means the user hadn't switched to their authoring app yet.
+- Each "reason" is ONE short sentence (max 200 chars) shown to the end user. screenEvidence is a longer paragraph (max 600 chars) describing what you saw.`;
 
     const userContent: Array<Record<string, unknown>> = [
       {
         type: "text",
-        text: `Project: "${data.projectName}" — recorded ${Math.round(
-          data.durationSeconds / 60,
-        )} min ${data.durationSeconds % 60} s.
+        text: `Project: "${data.projectName}" — total recording length ${formatStamp(data.durationSeconds)} (${data.durationSeconds}s).
 
-Below are: SELFIE (1 image), then WEBCAM frames in chronological order, then SCREEN frames in chronological order, then PDF pages in order.`,
+Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with timestamps, then PDF pages.`,
       },
-      { type: "text", text: "SELFIE:" },
+      { type: "text", text: "SELFIE (reference photo from profile):" },
       { type: "image_url", image_url: { url: selfieDataUrl } },
-      { type: "text", text: `WEBCAM frames (${data.webcamFrames.length}):` },
-      ...data.webcamFrames.map((url) => ({
-        type: "image_url",
-        image_url: { url },
-      })),
-      { type: "text", text: `SCREEN frames (${data.screenFrames.length}):` },
-      ...data.screenFrames.map((url) => ({
-        type: "image_url",
-        image_url: { url },
-      })),
-      { type: "text", text: `PDF pages (${data.pdfPageImages.length}):` },
-      ...data.pdfPageImages.map((url) => ({
-        type: "image_url",
-        image_url: { url },
-      })),
+      { type: "text", text: `WEBCAM frames (${webcamFrames.length}):` },
+      ...webcamFrames.flatMap((f) => [
+        { type: "text", text: `WEBCAM @ ${formatStamp(f.timestampSec)}` },
+        { type: "image_url", image_url: { url: f.dataUrl } },
+      ]),
+      {
+        type: "text",
+        text: `SCREEN frames (${screenFrames.length}) — sampled across the full ${formatStamp(data.durationSeconds)} recording, with denser coverage near the end where the finished document is most likely visible. Look at LATE timestamps first to find the working document:`,
+      },
+      ...screenFrames.flatMap((f) => [
+        { type: "text", text: `SCREEN @ ${formatStamp(f.timestampSec)}` },
+        { type: "image_url", image_url: { url: f.dataUrl } },
+      ]),
+      { type: "text", text: `PDF pages (${data.pdfPageImages.length}) — the final submitted document:` },
+      ...data.pdfPageImages.flatMap((url, i) => [
+        { type: "text", text: `PDF page ${i + 1}` },
+        { type: "image_url", image_url: { url } },
+      ]),
     ];
 
     const tool = {
       type: "function" as const,
       function: {
         name: "report_verification",
-        description: "Report the verification verdict for all six checks.",
+        description:
+          "Report the verification verdict. Identify the working document surface first, then return all six checks plus a screenEvidence summary.",
         parameters: {
           type: "object",
           properties: {
+            screenEvidence: {
+              type: "string",
+              maxLength: 600,
+              description:
+                "What working-document app/window was identified (e.g. 'Microsoft Word — Document1.docx'), what was visible near the start vs the end of the recording, and what specific PDF content you could confirm was authored during the session. If no authoring surface was found, say so plainly.",
+            },
             checks: {
               type: "array",
               minItems: 6,
@@ -172,7 +234,7 @@ Below are: SELFIE (1 image), then WEBCAM frames in chronological order, then SCR
             },
             summary: { type: "string", maxLength: 400 },
           },
-          required: ["checks", "summary"],
+          required: ["screenEvidence", "checks", "summary"],
           additionalProperties: false,
         },
       },
@@ -219,7 +281,11 @@ Below are: SELFIE (1 image), then WEBCAM frames in chronological order, then SCR
     const json = await res.json();
     const argsRaw =
       json?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    let parsed: { checks: Array<Omit<CheckResult, "label">>; summary: string };
+    let parsed: {
+      checks: Array<Omit<CheckResult, "label">>;
+      summary: string;
+      screenEvidence?: string;
+    };
     try {
       parsed = typeof argsRaw === "string" ? JSON.parse(argsRaw) : argsRaw;
     } catch {
@@ -229,7 +295,6 @@ Below are: SELFIE (1 image), then WEBCAM frames in chronological order, then SCR
       throw new Error("Verification engine returned no checks.");
     }
 
-    // Normalize: ensure all six checks present, attach labels.
     const byKey = new Map(parsed.checks.map((c) => [c.key as CheckKey, c]));
     const checks: CheckResult[] = CHECK_KEYS.map((k) => {
       const found = byKey.get(k);
@@ -244,14 +309,13 @@ Below are: SELFIE (1 image), then WEBCAM frames in chronological order, then SCR
 
     const allPassed = checks.every((c) => c.passed);
     const status = allPassed ? "verified" : "rejected";
+    const screenEvidence = parsed.screenEvidence ?? "";
 
-    // Only persist verdict if a certificate row already exists. In the new
-    // flow we verify BEFORE issuing the certificate, so on a failed verdict
-    // there's nothing to update — the cert is never created.
     if (data.certificateId) {
       const notes = {
         checks: checks.map((c) => ({ ...c })),
         summary: parsed.summary ?? "",
+        screenEvidence,
       } as unknown as Record<string, unknown>;
       const { error: updErr } = await supabase
         .from("certificates")
@@ -269,6 +333,7 @@ Below are: SELFIE (1 image), then WEBCAM frames in chronological order, then SCR
       passed: allPassed,
       status,
       summary: parsed.summary ?? "",
+      screenEvidence,
       checks,
     };
   });

@@ -3,6 +3,11 @@
 
 const JPEG_QUALITY = 0.7;
 
+export interface TimestampedFrame {
+  dataUrl: string;
+  timestampSec: number;
+}
+
 async function loadVideo(blob: Blob): Promise<HTMLVideoElement> {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
@@ -12,7 +17,6 @@ async function loadVideo(blob: Blob): Promise<HTMLVideoElement> {
     video.src = URL.createObjectURL(blob);
     const cleanup = () => URL.revokeObjectURL(video.src);
     video.onloadedmetadata = () => {
-      // Some browsers won't seek without a play()/pause() priming.
       video.currentTime = 0;
       resolve(video);
     };
@@ -39,15 +43,8 @@ function seek(video: HTMLVideoElement, t: number): Promise<void> {
   });
 }
 
-export async function extractVideoFrames(
-  blob: Blob,
-  count: number,
-  maxWidth: number,
-): Promise<string[]> {
-  const video = await loadVideo(blob);
-  // Wait until metadata is fully ready (duration available).
+async function ensureDuration(video: HTMLVideoElement): Promise<number> {
   if (!isFinite(video.duration) || video.duration <= 0) {
-    // Force a tiny play to populate duration on browsers that need it.
     try {
       await video.play();
       video.pause();
@@ -55,12 +52,51 @@ export async function extractVideoFrames(
       /* ignore */
     }
   }
-  const duration = isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
-  const canvas = document.createElement("canvas");
-  const frames: string[] = [];
+  return isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+}
 
-  for (let i = 0; i < count; i++) {
-    const t = ((i + 0.5) / count) * duration;
+// End-weighted sampling: roughly 60% of frames are evenly spaced across the
+// recording, the remaining 40% are packed into the final third where the
+// finished document state is most likely to appear.
+function endWeightedTimestamps(duration: number, count: number): number[] {
+  if (count <= 1) return [duration * 0.5];
+  const evenCount = Math.max(2, Math.round(count * 0.6));
+  const endCount = count - evenCount;
+  const out: number[] = [];
+  for (let i = 0; i < evenCount; i++) {
+    out.push(((i + 0.5) / evenCount) * duration);
+  }
+  if (endCount > 0) {
+    const endStart = duration * (2 / 3);
+    const endSpan = duration - endStart;
+    for (let i = 0; i < endCount; i++) {
+      out.push(endStart + ((i + 0.5) / endCount) * endSpan);
+    }
+  }
+  return Array.from(new Set(out.map((t) => Math.round(t * 100) / 100))).sort(
+    (a, b) => a - b,
+  );
+}
+
+export async function extractVideoFramesWithTimestamps(
+  blob: Blob,
+  count: number,
+  maxWidth: number,
+  options: { endWeighted?: boolean } = {},
+): Promise<TimestampedFrame[]> {
+  const video = await loadVideo(blob);
+  const duration = await ensureDuration(video);
+  const canvas = document.createElement("canvas");
+  const out: TimestampedFrame[] = [];
+
+  const stamps = options.endWeighted
+    ? endWeightedTimestamps(duration, count)
+    : Array.from(
+        { length: count },
+        (_, i) => ((i + 0.5) / count) * duration,
+      );
+
+  for (const t of stamps) {
     try {
       await seek(video, t);
     } catch {
@@ -74,10 +110,23 @@ export async function extractVideoFrames(
     const ctx = canvas.getContext("2d");
     if (!ctx) continue;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    frames.push(canvas.toDataURL("image/jpeg", JPEG_QUALITY));
+    out.push({
+      dataUrl: canvas.toDataURL("image/jpeg", JPEG_QUALITY),
+      timestampSec: Math.max(0, Math.min(duration, t)),
+    });
   }
   URL.revokeObjectURL(video.src);
-  return frames;
+  return out;
+}
+
+// Back-compat: returns just data URLs (used elsewhere if needed).
+export async function extractVideoFrames(
+  blob: Blob,
+  count: number,
+  maxWidth: number,
+): Promise<string[]> {
+  const frames = await extractVideoFramesWithTimestamps(blob, count, maxWidth);
+  return frames.map((f) => f.dataUrl);
 }
 
 export async function extractPdfPageImages(
@@ -85,9 +134,7 @@ export async function extractPdfPageImages(
   maxPages: number,
   maxWidth: number,
 ): Promise<string[]> {
-  // Lazy import — pdfjs is heavy and only needed during verification.
   const pdfjs = await import("pdfjs-dist");
-  // Inline worker to avoid worker-url configuration headaches.
   const workerMod = await import(
     /* @vite-ignore */ "pdfjs-dist/build/pdf.worker.mjs?url"
   );

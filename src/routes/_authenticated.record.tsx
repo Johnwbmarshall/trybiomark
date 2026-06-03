@@ -9,7 +9,7 @@ import { finalizeCertificate } from "@/lib/certificate-finalize.functions";
 import { createDraft, getDraft, deleteDraft } from "@/lib/drafts.functions";
 import { getMyProfile } from "@/lib/profile.functions";
 import { verifySubmission, type CheckResult } from "@/lib/verification.functions";
-import { extractVideoFrames, extractPdfPageImages } from "@/lib/media-sampling";
+import { extractVideoFramesWithTimestamps, extractPdfPageImages } from "@/lib/media-sampling";
 import { generateCombinedPdf } from "@/lib/certificate-pdf";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { submitAppeal } from "@/lib/appeals.functions";
@@ -288,9 +288,11 @@ function RecordPage() {
 
       setUploadMsg("Sampling recording for verification…");
       const [screenFrames, webcamFrames, pdfPageImages] = await Promise.all([
-        // Screen text needs to be legible — sample densely and at high resolution.
-        extractVideoFrames(screenBlobForFrames, 24, 1600),
-        extractVideoFrames(webcamBlobForFrames, 8, 480),
+        // End-weighted so we get strong coverage of the final document state.
+        extractVideoFramesWithTimestamps(screenBlobForFrames, 24, 1600, {
+          endWeighted: true,
+        }),
+        extractVideoFramesWithTimestamps(webcamBlobForFrames, 8, 480),
         extractPdfPageImages(pdfFile, 6, 900),
       ]);
 
