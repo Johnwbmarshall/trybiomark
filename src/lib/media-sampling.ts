@@ -55,24 +55,46 @@ async function ensureDuration(video: HTMLVideoElement): Promise<number> {
   return isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
 }
 
-// End-weighted sampling: roughly 60% of frames are evenly spaced across the
-// recording, the remaining 40% are packed into the final third where the
-// finished document state is most likely to appear.
+// Sampling strategy:
+// - Short recordings (≤60s): evenly spaced across the whole clip with
+//   guaranteed frames at the very start and very end. Sparse end-weighting
+//   is counterproductive when there isn't much footage to begin with.
+// - Longer recordings: ~50% evenly spaced, ~50% packed into the final third
+//   where the finished document is most likely visible. First and last
+//   timestamps are always included.
 function endWeightedTimestamps(duration: number, count: number): number[] {
   if (count <= 1) return [duration * 0.5];
-  const evenCount = Math.max(2, Math.round(count * 0.6));
-  const endCount = count - evenCount;
-  const out: number[] = [];
+
+  const epsilon = Math.min(0.25, duration * 0.02);
+  const first = epsilon;
+  const last = Math.max(0, duration - epsilon);
+
+  if (duration <= 60) {
+    const out: number[] = [first];
+    const inner = count - 2;
+    for (let i = 1; i <= inner; i++) {
+      out.push((i / (inner + 1)) * duration);
+    }
+    out.push(last);
+    return Array.from(new Set(out.map((t) => Math.round(t * 100) / 100))).sort(
+      (a, b) => a - b,
+    );
+  }
+
+  const evenCount = Math.max(2, Math.round(count * 0.5));
+  const endCount = Math.max(0, count - evenCount - 2);
+  const out: number[] = [first];
   for (let i = 0; i < evenCount; i++) {
     out.push(((i + 0.5) / evenCount) * duration);
   }
   if (endCount > 0) {
     const endStart = duration * (2 / 3);
-    const endSpan = duration - endStart;
+    const endSpan = Math.max(0, duration - endStart - epsilon);
     for (let i = 0; i < endCount; i++) {
       out.push(endStart + ((i + 0.5) / endCount) * endSpan);
     }
   }
+  out.push(last);
   return Array.from(new Set(out.map((t) => Math.round(t * 100) / 100))).sort(
     (a, b) => a - b,
   );
