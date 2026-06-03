@@ -167,12 +167,8 @@ function RecordPage() {
     }
   };
 
-  const handleChecklistCancel = async () => {
-    try {
-      await recorder.stop().catch(() => {});
-    } catch {
-      /* noop */
-    }
+  const handleChecklistCancel = () => {
+    recorder.cancel();
     setPhase("setup");
   };
 
