@@ -158,14 +158,14 @@ export function useMediaRecorder() {
     return composed;
   };
 
-  const start = useCallback(async () => {
+  // Prepare media streams for the pre-flight checklist WITHOUT starting
+  // MediaRecorder or the elapsed timer. The actual recording is started by
+  // `beginRecording()` after the user passes pre-flight, so the saved video
+  // contains only the authoring session (not the setup screens).
+  const prepare = useCallback(async () => {
     setError(null);
     setState("requesting");
     try {
-      // Request the webcam (with mic) FIRST. Screen capture intentionally does
-      // not request system audio because on some multi-monitor setups it can
-      // grab or suppress the default input device, leaving the pre-flight mic
-      // meter with a live-but-silent microphone track.
       let webcam: MediaStream;
       try {
         webcam = await navigator.mediaDevices.getUserMedia({
@@ -178,10 +178,6 @@ export function useMediaRecorder() {
         throw err;
       }
 
-      // Detect how many physical monitors the user has via the Window
-      // Management API (Chromium-based browsers). The user MUST share every
-      // detected monitor before recording can begin — partial captures are
-      // not allowed.
       let expectedMonitorCount = 1;
       const nav = navigator as Navigator & {
         permissions?: { query: (q: { name: string }) => Promise<{ state: string }> };
@@ -191,7 +187,6 @@ export function useMediaRecorder() {
       };
       if (typeof win.getScreenDetails === "function") {
         try {
-          // Some browsers gate this behind a permission prompt.
           try {
             await nav.permissions?.query({ name: "window-management" });
           } catch {
@@ -202,7 +197,6 @@ export function useMediaRecorder() {
             expectedMonitorCount = details.screens.length;
           }
         } catch {
-          // Permission denied or API unavailable — fall back to single monitor.
           expectedMonitorCount = 1;
         }
       }
@@ -210,9 +204,6 @@ export function useMediaRecorder() {
       const monitorStreams: MediaStream[] = [];
       monitorStreams.push(await captureMonitor());
 
-      // If more than one monitor is attached, require the user to share each
-      // remaining monitor before we proceed. Cancelling the picker aborts the
-      // whole session — we cannot start recording with monitors unshared.
       while (monitorStreams.length < expectedMonitorCount) {
         const remaining = expectedMonitorCount - monitorStreams.length;
         const proceed = window.confirm(
@@ -230,19 +221,14 @@ export function useMediaRecorder() {
         try {
           monitorStreams.push(await captureMonitor());
         } catch {
-          // If the user cancels or denies the picker, abort — partial captures
-          // are not allowed.
           throw new Error(
             `All ${expectedMonitorCount} connected monitors must be shared before recording can begin.`,
           );
         }
       }
 
-      // Re-open the microphone after display capture as a best-effort guard
-      // against browsers/OS audio stacks that re-route inputs while the user is
-      // sharing multiple entire screens. Permission was already requested from
-      // the initial user gesture above, so this should not add another prompt;
-      // if it fails, keep the original mic track rather than aborting.
+      // Re-open the microphone after display capture (some OS audio stacks
+      // re-route inputs when entire screens are shared).
       try {
         const refreshedMic = await navigator.mediaDevices.getUserMedia({
           audio: microphoneConstraints,
@@ -258,7 +244,6 @@ export function useMediaRecorder() {
             ? `mic refresh failed (${err.name}: ${err.message}) — keeping original track`
             : "mic refresh failed — keeping original track",
         );
-        /* keep the originally granted microphone track */
       }
 
       screenSourceStreamsRef.current = monitorStreams;
@@ -267,56 +252,66 @@ export function useMediaRecorder() {
       screenStreamRef.current = screen;
       webcamStreamRef.current = webcam;
 
-      // Surface mic track lifecycle issues to the troubleshooting panel.
       webcam.getAudioTracks().forEach((t) => {
         t.onmute = () => logMicCaptureError(`mic track muted by system (${t.label || "default"})`);
         t.onended = () => logMicCaptureError(`mic track ended unexpectedly (${t.label || "default"})`);
       });
 
-      const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-        ? "video/webm;codecs=vp9,opus"
-        : "video/webm";
-
-      screenChunksRef.current = [];
-      webcamChunksRef.current = [];
-
-      const screenRec = new MediaRecorder(screen, { mimeType: mime });
-      const webcamRec = new MediaRecorder(webcam, { mimeType: mime });
-
-      screenRec.ondataavailable = (e) => e.data.size && screenChunksRef.current.push(e.data);
-      webcamRec.ondataavailable = (e) => e.data.size && webcamChunksRef.current.push(e.data);
-
-      // If the user stops sharing any monitor from the browser bar, end the recording.
-      monitorStreams.forEach((s) => {
-        s.getVideoTracks()[0].onended = () => {
-          if (screenRec.state !== "inactive") screenRec.stop();
-          if (webcamRec.state !== "inactive") webcamRec.stop();
-        };
-      });
-
-      screenRecorderRef.current = screenRec;
-      webcamRecorderRef.current = webcamRec;
-
-      screenRec.start(1000);
-      webcamRec.start(1000);
-
-      accumulatedRef.current = 0;
-      runStartedAtRef.current = Date.now();
-      setElapsed(0);
-      tickRef.current = window.setInterval(() => {
-        setElapsed(Math.floor(currentElapsedMs() / 1000));
-      }, 500);
-
-      setState("recording");
+      setState("idle");
       return { screenStream: screen, webcamStream: webcam };
     } catch (e) {
       cleanup();
-      const msg = e instanceof Error ? e.message : "Could not start recording.";
+      const msg = e instanceof Error ? e.message : "Could not prepare recording.";
       setError(msg);
       setState("error");
       throw e;
     }
   }, [cleanup]);
+
+  // Start the actual recording. Must be called after `prepare()` resolved and
+  // pre-flight passed. Only from this point on are bytes captured to disk.
+  const beginRecording = useCallback(() => {
+    const screen = screenStreamRef.current;
+    const webcam = webcamStreamRef.current;
+    if (!screen || !webcam) {
+      throw new Error("Media not prepared — call prepare() first.");
+    }
+
+    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+      ? "video/webm;codecs=vp9,opus"
+      : "video/webm";
+
+    screenChunksRef.current = [];
+    webcamChunksRef.current = [];
+
+    const screenRec = new MediaRecorder(screen, { mimeType: mime });
+    const webcamRec = new MediaRecorder(webcam, { mimeType: mime });
+
+    screenRec.ondataavailable = (e) => e.data.size && screenChunksRef.current.push(e.data);
+    webcamRec.ondataavailable = (e) => e.data.size && webcamChunksRef.current.push(e.data);
+
+    screenSourceStreamsRef.current.forEach((s) => {
+      s.getVideoTracks()[0].onended = () => {
+        if (screenRec.state !== "inactive") screenRec.stop();
+        if (webcamRec.state !== "inactive") webcamRec.stop();
+      };
+    });
+
+    screenRecorderRef.current = screenRec;
+    webcamRecorderRef.current = webcamRec;
+
+    screenRec.start(1000);
+    webcamRec.start(1000);
+
+    accumulatedRef.current = 0;
+    runStartedAtRef.current = Date.now();
+    setElapsed(0);
+    tickRef.current = window.setInterval(() => {
+      setElapsed(Math.floor(currentElapsedMs() / 1000));
+    }, 500);
+
+    setState("recording");
+  }, []);
 
   const pause = useCallback(() => {
     const s = screenRecorderRef.current;
