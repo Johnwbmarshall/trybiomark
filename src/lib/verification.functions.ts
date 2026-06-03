@@ -296,7 +296,7 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
     }
 
     const byKey = new Map(parsed.checks.map((c) => [c.key as CheckKey, c]));
-    const checks: CheckResult[] = CHECK_KEYS.map((k) => {
+    const rawChecks: CheckResult[] = CHECK_KEYS.map((k) => {
       const found = byKey.get(k);
       return {
         key: k,
@@ -307,15 +307,49 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
       };
     });
 
+    const screenEvidence = parsed.screenEvidence ?? "";
+
+    // ----- Server-side guardrail against "I didn't see it" false positives -----
+    // For the two screen-authorship checks, only treat a FAIL as real when
+    // Gemini cites concrete contradictory evidence. If the failure is just
+    // "no authoring app visible / can't see / impossible to confirm", downgrade
+    // to a low-confidence PASS so the sparse-sampling problem doesn't reject
+    // legitimate submissions.
+    const SCREEN_AUTHORSHIP_KEYS: CheckKey[] = [
+      "document_matches_recording",
+      "video_and_output_consistent",
+    ];
+    const NEGATIVE_EVIDENCE_RE =
+      /\b(no(t)?\s+(visible|shown|seen|present|observed)|does\s+not\s+show|doesn['’]?t\s+show|no\s+(authoring|application|app|editor|document)|cannot\s+(see|confirm|verify|determine)|can['’]?t\s+(see|confirm)|impossible\s+to\s+confirm|no\s+evidence\s+of\s+(it\s+being|the\s+document|authoring|writing|creation|typing)|never\s+shown)\b/i;
+    const POSITIVE_CONTRADICTION_RE =
+      /\b(contradict|mismatch|different\s+document|unrelated|blank\s+document|empty\s+document|wrong\s+document|does\s+not\s+match|appears?\s+at\s+once|sudden(ly)?\s+appears|pasted|paste\s+event|all\s+at\s+once)\b/i;
+
+    const checks: CheckResult[] = rawChecks.map((c) => {
+      if (c.passed) return c;
+      if (!SCREEN_AUTHORSHIP_KEYS.includes(c.key)) return c;
+      const haystack = `${c.reason} ${screenEvidence}`;
+      const looksLikeAbsenceOnly =
+        NEGATIVE_EVIDENCE_RE.test(haystack) &&
+        !POSITIVE_CONTRADICTION_RE.test(haystack);
+      if (!looksLikeAbsenceOnly) return c;
+      return {
+        ...c,
+        passed: true,
+        confidence: "low",
+        reason:
+          "Sparse frame sampling could not show authorship directly, but no concrete contradiction was found in the recording or document.",
+      };
+    });
+
     const allPassed = checks.every((c) => c.passed);
     const status = allPassed ? "verified" : "rejected";
-    const screenEvidence = parsed.screenEvidence ?? "";
 
     if (data.certificateId) {
       const notes = {
         checks: checks.map((c) => ({ ...c })),
         summary: parsed.summary ?? "",
         screenEvidence,
+        rawChecks: rawChecks.map((c) => ({ ...c })),
       } as unknown as Record<string, unknown>;
       const { error: updErr } = await supabase
         .from("certificates")

@@ -1,42 +1,34 @@
+## Diagnosis
+
+`CERT-HY6N-JZ` shows the same pattern: Gemini failed the screen/document checks with “no authoring application,” but the appeal was manually reversed and issued. One important detail: this was a **17-second recording**, so the current 24-frame sparse sampler may still miss very short typing/document transitions or show frames that are too downscaled for Gemini to identify the authoring surface reliably.
+
 ## Plan
 
-1. **Fix what Gemini is actually shown**
-   - Replace the current 24 evenly-spaced screen screenshots with a timestamped evidence packet.
-   - Include exact early, middle, and final frames, with extra dense coverage near the end of the recording where final document state often appears.
-   - Label each image with its timestamp so Gemini can compare document start, progress, and finish instead of treating frames as unlabeled screenshots.
+1. **Replace sparse frame-only review with a richer evidence packet**
+   - Add deterministic timestamps that always include: first frame, early progress, midpoint, late progress, and the final frame.
+   - For short recordings, sample more densely across the whole video instead of only “end-weighted” frames.
+   - Increase screen-frame detail enough for Word/Google Docs/editor UI and typed text to be readable.
 
-2. **Make screen evidence app/document focused**
-   - Update the verification prompt so Gemini must first identify the working document surface: Microsoft Word, Google Docs, Pages, LibreOffice, a text editor, IDE, notes app, or equivalent authoring program.
-   - Require it to describe:
-     - which app/window is the working document,
-     - what the document looked like near the start,
-     - what it looked like near the end,
-     - what visible text/layout fragments it can confirm were created,
-     - whether any PDF content is actually contradicted by the recording.
-   - Explicitly tell Gemini that Bio Mark’s recording page, preview window, browser chrome, and setup UI are not the authored document unless no other authoring surface exists.
+2. **Add visual timeline/context frames for Gemini**
+   - Include a small set of “difference/progress” frames or adjacent timestamp clusters so Gemini can see whether document content changes over time rather than treating frames independently.
+   - Label frames as `SCREEN START`, `SCREEN PROGRESS`, `SCREEN FINAL`, etc., not just timestamps.
 
-3. **Change failure criteria to avoid “I didn’t see everything” false positives**
-   - For “PDF matches what was created on screen” and “video/output consistent,” fail only when Gemini can point to concrete positive evidence:
-     - no authoring app/document surface appears in any relevant screen frame, or
-     - the final PDF is visibly contradicted by the working document state, or
-     - text/layout appears all at once with no plausible creation/progress evidence.
-   - Passing should be allowed when the recording confirms partial authorship: visible Word/equivalent app, typed fragments, growing content, cursor movement, final document state, or matching PDF fragments.
+3. **Make rejection rules conservative in code, not only in the prompt**
+   - After Gemini returns checks, add a server-side guardrail: if the two screen-authorship checks fail only because “no authoring app / not shown / impossible to confirm,” downgrade those failures to pass-low-confidence unless Gemini provides concrete contradictory evidence.
+   - Keep strict failures for actual contradiction, blank/unrelated final document, AI-generation evidence, person mismatch, other people, or transcription concerns.
 
-4. **Add structured reasoning fields to verification output**
-   - Extend Gemini’s tool schema to return a short `screenEvidence` summary alongside the six checks.
-   - Store that summary in verification notes so future appeals/debugging can show whether Gemini identified the correct working document or incorrectly focused on the Bio Mark page.
+4. **Persist debugging evidence**
+   - Store the new `screenEvidence` summary when certificates are issued and when appeals are submitted/reversed so future examples show whether Gemini focused on the wrong surface.
+   - Preserve the public six checks unchanged.
 
-5. **Keep compatibility with existing certificates and appeals**
-   - Keep the six existing public checks unchanged for user-facing certificate display.
-   - Add the extra screen-evidence summary as optional metadata only, so existing records still render normally.
+5. **Adjust final certificate/appeal data flow**
+   - Pass `screenEvidence` through `createCertificate`, appeal submission, and manual reversal so the metadata is not lost after issuing/reversing a certificate.
 
-## Technical details
+## Files to update
 
-- Update `src/lib/media-sampling.ts` to support timestamped video frame extraction and end-weighted sampling.
-- Update `src/routes/_authenticated.record.tsx` to submit timestamped screen/webcam evidence to verification instead of anonymous image arrays.
-- Update `src/lib/verification.functions.ts` schema, prompt, user message construction, and tool schema to use timestamp labels and require working-document analysis before verdicts.
-- Keep PDF page extraction as-is, but label PDF pages clearly in the multimodal prompt.
-
-## Expected result
-
-Gemini should stop rejecting sessions merely because it sees Bio Mark UI in some frames. It will be guided to locate Word or an equivalent authoring surface, compare early/progress/final states, and only reject when there is concrete evidence the submitted PDF was not authored in the recording.
+- `src/lib/media-sampling.ts` — denser short-recording sampling and clearer timestamp/frame labeling support.
+- `src/routes/_authenticated.record.tsx` — use the improved sampler and pass `screenEvidence` through certificate/appeal flows.
+- `src/lib/verification.functions.ts` — stricter prompt wording plus server-side false-positive guardrail.
+- `src/lib/certificates.functions.ts` — accept and store optional `screenEvidence`.
+- `src/lib/appeals.functions.ts` — accept/store/pass optional `screenEvidence` through appeal review and reversal.
+- `src/routes/appeals.$token.tsx` — display screen-evidence notes for reviewer debugging.
