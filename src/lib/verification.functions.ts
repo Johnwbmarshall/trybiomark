@@ -192,13 +192,9 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
         { type: "image_url", image_url: { url: f.dataUrl } },
       ]),
       { type: "text", text: `PDF pages (${data.pdfPageImages.length}) — the final submitted document:` },
-      ...data.pdfPageImages.map((url, i) => ({
-        type: "image_url",
-        image_url: { url },
-        // Page label as separate text for clarity:
-      })).flatMap((img, i) => [
+      ...data.pdfPageImages.flatMap((url, i) => [
         { type: "text", text: `PDF page ${i + 1}` },
-        img,
+        { type: "image_url", image_url: { url } },
       ]),
     ];
 
