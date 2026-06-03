@@ -665,7 +665,15 @@ function RecordPage() {
           screenStream={recorder.screenStream}
           webcamStream={recorder.webcamStream}
           onCancel={handleChecklistCancel}
-          onConfirm={() => setPhase("live")}
+          onConfirm={() => {
+            try {
+              recorder.beginRecording();
+              setPhase("live");
+            } catch (e) {
+              setErrMsg(e instanceof Error ? e.message : "Could not start recording.");
+              setPhase("setup");
+            }
+          }}
         />
       )}
 
