@@ -91,9 +91,19 @@ function RecordPage() {
   const getProfileFn = useServerFn(getMyProfile);
   const verifyFn = useServerFn(verifySubmission);
   const submitAppealFn = useServerFn(submitAppeal);
+  const issueChallengeFn = useServerFn(issueLivenessChallenge);
+  const submitChallengeFn = useServerFn(submitLivenessChallenge);
   const [appealNote, setAppealNote] = useState("");
   const [appealing, setAppealing] = useState(false);
   const [appealSent, setAppealSent] = useState(false);
+
+  // ----- Anti-spoofing liveness state -----
+  const [activeChallenge, setActiveChallenge] = useState<LivenessChallenge | null>(null);
+  const [liveReceipts, setLiveReceipts] = useState<LivenessReceipt[]>([]);
+  const [requiredNonces, setRequiredNonces] = useState<string[]>([]);
+  const [livenessError, setLivenessError] = useState<string | null>(null);
+  const livenessTimerRef = useRef<number | null>(null);
+  const livenessBusyRef = useRef(false);
 
   const { data: profileData, isLoading: profileLoading } = useQuery({
     queryKey: ["my-profile"],
