@@ -424,9 +424,11 @@ function RecordPage() {
           We couldn't issue this certificate
         </h1>
         <p className="mt-3 text-muted-foreground">
-          Every Bio Mark certificate has to clear six automated integrity checks
-          powered by Gemini. One or more checks didn't pass for this submission,
-          so no certificate was issued and no email was sent.
+          Every Bio Mark certificate has to clear a series of automated
+          integrity checks — including live screen-flash and pose challenges
+          and proof that randomised codes shown during the recording were
+          typed into the document. One or more checks didn't pass for this
+          submission, so no certificate was issued and no email was sent.
         </p>
         {verification.summary && (
           <p className="mt-3 rounded-md bg-card border border-border p-3 text-sm">
