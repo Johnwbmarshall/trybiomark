@@ -1,6 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import {
+  verifyReceiptSignature,
+  type LivenessReceipt,
+} from "./liveness.functions";
 
 const frameUrl = z
   .string()
@@ -16,6 +20,19 @@ const timestampedFrame = z.object({
 
 // Accept either plain data URLs (legacy) or timestamped frames.
 const frameInput = z.union([frameUrl, timestampedFrame]);
+
+const livenessReceiptSchema = z.object({
+  challengeId: z.string().min(8).max(64),
+  nonce: z.string().min(4).max(32),
+  pose: z.string().min(1).max(64),
+  flashHex: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+  flashName: z.string().min(1).max(64),
+  issuedAt: z.number().int(),
+  verifiedAt: z.number().int(),
+  ok: z.boolean(),
+  reason: z.string().max(400).default(""),
+  hmac: z.string().min(16).max(128),
+});
 
 const schema = z.object({
   certificateId: z
@@ -33,7 +50,13 @@ const schema = z.object({
     .optional(),
   durationSeconds: z.number().int().min(0).max(60 * 60 * 24),
   projectName: z.string().trim().min(1).max(120),
+  // Anti-spoofing: nonces issued during the recording that must appear in
+  // the PDF text, plus signed liveness receipts collected mid-session.
+  requiredNonces: z.array(z.string().min(2).max(32)).max(20).optional(),
+  pdfText: z.string().max(2_000_000).optional(),
+  livenessReceipts: z.array(livenessReceiptSchema).max(20).optional(),
 });
+
 
 function formatStamp(t: number): string {
   const total = Math.max(0, Math.floor(t));
