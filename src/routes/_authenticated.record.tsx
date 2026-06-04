@@ -193,7 +193,131 @@ function RecordPage() {
     setPhase("setup");
   };
 
+  // Snap a single frame from the live webcam stream for liveness verification.
+  const snapWebcamFrame = useCallback((): string | null => {
+    const v = webcamVideoRef.current;
+    if (!v) return null;
+    const w = v.videoWidth || 640;
+    const h = v.videoHeight || 480;
+    if (w === 0 || h === 0) return null;
+    const scale = Math.min(1, 480 / Math.max(w, h));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    try {
+      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+    } catch {
+      return null;
+    }
+    return canvas.toDataURL("image/jpeg", 0.7);
+  }, []);
+
+  // Run a single liveness challenge: issue → show overlay → snap frame →
+  // submit → store receipt + nonce. Returns when done (overlay closed).
+  const runOneChallenge = useCallback(async () => {
+    if (livenessBusyRef.current) return;
+    livenessBusyRef.current = true;
+    setLivenessError(null);
+    try {
+      const challenge = await issueChallengeFn();
+      setRequiredNonces((prev) => Array.from(new Set([...prev, challenge.nonce])));
+      setActiveChallenge(challenge);
+      // The overlay snaps the frame mid-way and then calls onDone after a moment.
+      // We resolve when onDone fires — see the overlay handlers below.
+    } catch (e) {
+      livenessBusyRef.current = false;
+      setLivenessError(
+        e instanceof Error ? e.message : "Could not start liveness challenge.",
+      );
+    }
+  }, [issueChallengeFn]);
+
+  // Schedule challenges at random intervals during the live phase.
+  useEffect(() => {
+    if (phase !== "live" || recorder.state !== "recording") return;
+    const scheduleNext = (minMs: number, maxMs: number) => {
+      const delay = minMs + Math.random() * (maxMs - minMs);
+      livenessTimerRef.current = window.setTimeout(async () => {
+        await runOneChallenge();
+        // Schedule another one if user keeps recording.
+        scheduleNext(55_000, 95_000);
+      }, delay);
+    };
+    // First challenge between 20 and 40 seconds in.
+    scheduleNext(20_000, 40_000);
+    return () => {
+      if (livenessTimerRef.current) {
+        window.clearTimeout(livenessTimerRef.current);
+        livenessTimerRef.current = null;
+      }
+    };
+  }, [phase, recorder.state, runOneChallenge]);
+
+  // Issue the OPENING nonce as soon as recording begins so the user has a
+  // code to type into their document right away.
+  useEffect(() => {
+    if (phase !== "live") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const opening = await issueChallengeFn();
+        if (cancelled) return;
+        // Only register the nonce — don't show the overlay for the opening one.
+        setRequiredNonces((prev) =>
+          prev.length === 0 ? [opening.nonce] : prev,
+        );
+      } catch (e) {
+        if (!cancelled) {
+          setLivenessError(
+            e instanceof Error ? e.message : "Could not issue session code.",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  const handleChallengeSnap = useCallback(async () => {
+    const challenge = activeChallenge;
+    if (!challenge) return;
+    const frame = snapWebcamFrame();
+    if (!frame) {
+      setLivenessError("Could not capture webcam frame for liveness check.");
+      return;
+    }
+    try {
+      const receipt = await submitChallengeFn({
+        data: { challenge, webcamFrameDataUrl: frame },
+      });
+      setLiveReceipts((prev) => [...prev, receipt]);
+      if (!receipt.ok) {
+        setLivenessError(
+          `Liveness check did not pass: ${receipt.reason || "pose or screen-flash colour not detected."} Another challenge will follow.`,
+        );
+      }
+    } catch (e) {
+      setLivenessError(
+        e instanceof Error ? e.message : "Liveness check failed.",
+      );
+    }
+  }, [activeChallenge, snapWebcamFrame, submitChallengeFn]);
+
+  const handleChallengeDone = useCallback(() => {
+    setActiveChallenge(null);
+    livenessBusyRef.current = false;
+  }, []);
+
   const handleStop = async () => {
+    if (livenessTimerRef.current) {
+      window.clearTimeout(livenessTimerRef.current);
+      livenessTimerRef.current = null;
+    }
+    setActiveChallenge(null);
     try {
       const result = await recorder.stop();
       setPending({
