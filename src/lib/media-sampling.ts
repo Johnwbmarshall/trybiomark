@@ -182,3 +182,32 @@ export async function extractPdfPageImages(
   }
   return out;
 }
+
+// Extract the concatenated text content of a PDF — used to verify that
+// liveness nonces issued during the recording were actually typed into the
+// document. Sparse / image-only PDFs may return an empty string; that case
+// is handled by the caller.
+export async function extractPdfText(file: File | Blob): Promise<string> {
+  const pdfjs = await import("pdfjs-dist");
+  const workerMod = await import(
+    /* @vite-ignore */ "pdfjs-dist/build/pdf.worker.mjs?url"
+  );
+  pdfjs.GlobalWorkerOptions.workerSrc = (workerMod as { default: string }).default;
+
+  const ab = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data: ab }).promise;
+  const parts: string[] = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const tc = await page.getTextContent();
+    const text = tc.items
+      .map((it) =>
+        typeof (it as { str?: string }).str === "string"
+          ? (it as { str: string }).str
+          : "",
+      )
+      .join(" ");
+    parts.push(text);
+  }
+  return parts.join("\n");
+}
