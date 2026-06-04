@@ -881,6 +881,47 @@ function RecordPage() {
             </div>
           </div>
 
+          {/* Nonce banner — codes the user must type into their document */}
+          {requiredNonces.length > 0 && (
+            <div className="mt-6 rounded-xl border border-gold/40 bg-gold/10 p-4">
+              <div className="flex items-start gap-3">
+                <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-gold" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    Type these codes into your document
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Anywhere in the text is fine. They prove this PDF was finalised
+                    during this live session — without them the certificate will be
+                    refused. New codes will appear here as you record.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {requiredNonces.map((n) => (
+                      <code
+                        key={n}
+                        className="rounded-md border border-gold/40 bg-background px-2.5 py-1 font-mono text-sm text-gold"
+                      >
+                        {n}
+                      </code>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {livenessError && (
+            <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {livenessError}
+            </p>
+          )}
+
+          <p className="mt-4 text-xs text-muted-foreground">
+            Liveness checks passed: {liveReceipts.filter((r) => r.ok).length} —
+            we'll flash your screen and ask you to perform a quick pose a couple
+            of times. Stay visible on camera.
+          </p>
+
           <RecordingControls
             elapsed={recorder.elapsed}
             paused={recorder.state === "paused"}
@@ -889,6 +930,15 @@ function RecordPage() {
             onStop={handleStop}
           />
         </div>
+      )}
+
+      {activeChallenge && phase === "live" && (
+        <LivenessOverlay
+          flashHex={activeChallenge.flashHex}
+          pose={activeChallenge.pose}
+          onSnap={handleChallengeSnap}
+          onDone={handleChallengeDone}
+        />
       )}
 
       {(phase === "attach" || phase === "uploading") && pending && (
