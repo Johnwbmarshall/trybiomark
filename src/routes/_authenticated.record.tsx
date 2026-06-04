@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { useMediaRecorder } from "@/hooks/useMediaRecorder";
@@ -9,14 +9,25 @@ import { finalizeCertificate } from "@/lib/certificate-finalize.functions";
 import { createDraft, getDraft, deleteDraft } from "@/lib/drafts.functions";
 import { getMyProfile } from "@/lib/profile.functions";
 import { verifySubmission, type CheckResult } from "@/lib/verification.functions";
-import { extractVideoFramesWithTimestamps, extractPdfPageImages } from "@/lib/media-sampling";
+import {
+  issueLivenessChallenge,
+  submitLivenessChallenge,
+  type LivenessChallenge,
+  type LivenessReceipt,
+} from "@/lib/liveness.functions";
+import {
+  extractVideoFramesWithTimestamps,
+  extractPdfPageImages,
+  extractPdfText,
+} from "@/lib/media-sampling";
 import { generateCombinedPdf } from "@/lib/certificate-pdf";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { submitAppeal } from "@/lib/appeals.functions";
 import { PreflightChecklist } from "@/components/PreflightChecklist";
 import { RecordingControls } from "@/components/RecordingControls";
+import { LivenessOverlay } from "@/components/LivenessOverlay";
 import { useQuery } from "@tanstack/react-query";
-import { Video, Download, Copy, Check, X, FileText, Save, Camera, ShieldCheck } from "lucide-react";
+import { Video, Download, Copy, Check, X, FileText, Save, Camera, ShieldCheck, Sparkles } from "lucide-react";
 
 const searchSchema = z.object({
   draft: z.string().uuid().optional(),
