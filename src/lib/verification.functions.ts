@@ -417,10 +417,15 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
 
     if (data.certificateId) {
       const notes = {
-        checks: checks.map((c) => ({ ...c })),
+        checks: finalChecks.map((c) => ({ ...c })),
         summary: parsed.summary ?? "",
         screenEvidence,
         rawChecks: rawChecks.map((c) => ({ ...c })),
+        liveness: {
+          totalReceipts: livenessReceipts.length,
+          validReceipts: validReceipts.length,
+        },
+        requiredNonces,
       } as unknown as Record<string, unknown>;
       const { error: updErr } = await supabase
         .from("certificates")
@@ -439,7 +444,7 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
       status,
       summary: parsed.summary ?? "",
       screenEvidence,
-      checks,
+      checks: finalChecks,
     };
   });
 
