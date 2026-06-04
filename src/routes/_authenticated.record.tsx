@@ -432,16 +432,30 @@ function RecordPage() {
       }
 
       setUploadMsg("Sampling recording for verification…");
-      const [screenFrames, webcamFrames, pdfPageImages] = await Promise.all([
+      const [screenFrames, webcamFrames, pdfPageImages, pdfText] = await Promise.all([
         // End-weighted so we get strong coverage of the final document state.
         extractVideoFramesWithTimestamps(screenBlobForFrames, 24, 1600, {
           endWeighted: true,
         }),
         extractVideoFramesWithTimestamps(webcamBlobForFrames, 8, 480),
         extractPdfPageImages(pdfFile, 6, 900),
+        extractPdfText(pdfFile).catch(() => ""),
       ]);
 
-      setUploadMsg("Running Gemini verification (this can take ~30 s)…");
+      // Pre-flight nonce check on the client so the user gets an immediate,
+      // actionable error if they forgot to type a session code into the PDF.
+      const missingClientSide = requiredNonces.filter(
+        (n) => !pdfText.toUpperCase().includes(n.toUpperCase()),
+      );
+      if (requiredNonces.length > 0 && missingClientSide.length > 0) {
+        setErrMsg(
+          `Your PDF is missing ${missingClientSide.length === 1 ? "this session code" : "these session codes"}: ${missingClientSide.join(", ")}. Open your document, type ${missingClientSide.length === 1 ? "it" : "them"} anywhere in the text, re-export the PDF, and re-attach it.`,
+        );
+        setPhase("attach");
+        return;
+      }
+
+      setUploadMsg("Running verification (this can take ~30 s)…");
       const verdict = await verifyFn({
         data: {
           screenFrames,
@@ -449,6 +463,9 @@ function RecordPage() {
           pdfPageImages,
           durationSeconds: pending.durationSeconds,
           projectName: projectName.trim(),
+          requiredNonces,
+          pdfText,
+          livenessReceipts: liveReceipts,
         },
       });
 
