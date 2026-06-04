@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { useMediaRecorder } from "@/hooks/useMediaRecorder";
@@ -9,14 +9,25 @@ import { finalizeCertificate } from "@/lib/certificate-finalize.functions";
 import { createDraft, getDraft, deleteDraft } from "@/lib/drafts.functions";
 import { getMyProfile } from "@/lib/profile.functions";
 import { verifySubmission, type CheckResult } from "@/lib/verification.functions";
-import { extractVideoFramesWithTimestamps, extractPdfPageImages } from "@/lib/media-sampling";
+import {
+  issueLivenessChallenge,
+  submitLivenessChallenge,
+  type LivenessChallenge,
+  type LivenessReceipt,
+} from "@/lib/liveness.functions";
+import {
+  extractVideoFramesWithTimestamps,
+  extractPdfPageImages,
+  extractPdfText,
+} from "@/lib/media-sampling";
 import { generateCombinedPdf } from "@/lib/certificate-pdf";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { submitAppeal } from "@/lib/appeals.functions";
 import { PreflightChecklist } from "@/components/PreflightChecklist";
 import { RecordingControls } from "@/components/RecordingControls";
+import { LivenessOverlay } from "@/components/LivenessOverlay";
 import { useQuery } from "@tanstack/react-query";
-import { Video, Download, Copy, Check, X, FileText, Save, Camera, ShieldCheck } from "lucide-react";
+import { Video, Download, Copy, Check, X, FileText, Save, Camera, ShieldCheck, Sparkles } from "lucide-react";
 
 const searchSchema = z.object({
   draft: z.string().uuid().optional(),
@@ -80,9 +91,19 @@ function RecordPage() {
   const getProfileFn = useServerFn(getMyProfile);
   const verifyFn = useServerFn(verifySubmission);
   const submitAppealFn = useServerFn(submitAppeal);
+  const issueChallengeFn = useServerFn(issueLivenessChallenge);
+  const submitChallengeFn = useServerFn(submitLivenessChallenge);
   const [appealNote, setAppealNote] = useState("");
   const [appealing, setAppealing] = useState(false);
   const [appealSent, setAppealSent] = useState(false);
+
+  // ----- Anti-spoofing liveness state -----
+  const [activeChallenge, setActiveChallenge] = useState<LivenessChallenge | null>(null);
+  const [liveReceipts, setLiveReceipts] = useState<LivenessReceipt[]>([]);
+  const [requiredNonces, setRequiredNonces] = useState<string[]>([]);
+  const [livenessError, setLivenessError] = useState<string | null>(null);
+  const livenessTimerRef = useRef<number | null>(null);
+  const livenessBusyRef = useRef(false);
 
   const { data: profileData, isLoading: profileLoading } = useQuery({
     queryKey: ["my-profile"],
@@ -172,7 +193,131 @@ function RecordPage() {
     setPhase("setup");
   };
 
+  // Snap a single frame from the live webcam stream for liveness verification.
+  const snapWebcamFrame = useCallback((): string | null => {
+    const v = webcamVideoRef.current;
+    if (!v) return null;
+    const w = v.videoWidth || 640;
+    const h = v.videoHeight || 480;
+    if (w === 0 || h === 0) return null;
+    const scale = Math.min(1, 480 / Math.max(w, h));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    try {
+      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+    } catch {
+      return null;
+    }
+    return canvas.toDataURL("image/jpeg", 0.7);
+  }, []);
+
+  // Run a single liveness challenge: issue → show overlay → snap frame →
+  // submit → store receipt + nonce. Returns when done (overlay closed).
+  const runOneChallenge = useCallback(async () => {
+    if (livenessBusyRef.current) return;
+    livenessBusyRef.current = true;
+    setLivenessError(null);
+    try {
+      const challenge = await issueChallengeFn();
+      setRequiredNonces((prev) => Array.from(new Set([...prev, challenge.nonce])));
+      setActiveChallenge(challenge);
+      // The overlay snaps the frame mid-way and then calls onDone after a moment.
+      // We resolve when onDone fires — see the overlay handlers below.
+    } catch (e) {
+      livenessBusyRef.current = false;
+      setLivenessError(
+        e instanceof Error ? e.message : "Could not start liveness challenge.",
+      );
+    }
+  }, [issueChallengeFn]);
+
+  // Schedule challenges at random intervals during the live phase.
+  useEffect(() => {
+    if (phase !== "live" || recorder.state !== "recording") return;
+    const scheduleNext = (minMs: number, maxMs: number) => {
+      const delay = minMs + Math.random() * (maxMs - minMs);
+      livenessTimerRef.current = window.setTimeout(async () => {
+        await runOneChallenge();
+        // Schedule another one if user keeps recording.
+        scheduleNext(55_000, 95_000);
+      }, delay);
+    };
+    // First challenge between 20 and 40 seconds in.
+    scheduleNext(20_000, 40_000);
+    return () => {
+      if (livenessTimerRef.current) {
+        window.clearTimeout(livenessTimerRef.current);
+        livenessTimerRef.current = null;
+      }
+    };
+  }, [phase, recorder.state, runOneChallenge]);
+
+  // Issue the OPENING nonce as soon as recording begins so the user has a
+  // code to type into their document right away.
+  useEffect(() => {
+    if (phase !== "live") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const opening = await issueChallengeFn();
+        if (cancelled) return;
+        // Only register the nonce — don't show the overlay for the opening one.
+        setRequiredNonces((prev) =>
+          prev.length === 0 ? [opening.nonce] : prev,
+        );
+      } catch (e) {
+        if (!cancelled) {
+          setLivenessError(
+            e instanceof Error ? e.message : "Could not issue session code.",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  const handleChallengeSnap = useCallback(async () => {
+    const challenge = activeChallenge;
+    if (!challenge) return;
+    const frame = snapWebcamFrame();
+    if (!frame) {
+      setLivenessError("Could not capture webcam frame for liveness check.");
+      return;
+    }
+    try {
+      const receipt = await submitChallengeFn({
+        data: { challenge, webcamFrameDataUrl: frame },
+      });
+      setLiveReceipts((prev) => [...prev, receipt]);
+      if (!receipt.ok) {
+        setLivenessError(
+          `Liveness check did not pass: ${receipt.reason || "pose or screen-flash colour not detected."} Another challenge will follow.`,
+        );
+      }
+    } catch (e) {
+      setLivenessError(
+        e instanceof Error ? e.message : "Liveness check failed.",
+      );
+    }
+  }, [activeChallenge, snapWebcamFrame, submitChallengeFn]);
+
+  const handleChallengeDone = useCallback(() => {
+    setActiveChallenge(null);
+    livenessBusyRef.current = false;
+  }, []);
+
   const handleStop = async () => {
+    if (livenessTimerRef.current) {
+      window.clearTimeout(livenessTimerRef.current);
+      livenessTimerRef.current = null;
+    }
+    setActiveChallenge(null);
     try {
       const result = await recorder.stop();
       setPending({
@@ -287,16 +432,30 @@ function RecordPage() {
       }
 
       setUploadMsg("Sampling recording for verification…");
-      const [screenFrames, webcamFrames, pdfPageImages] = await Promise.all([
+      const [screenFrames, webcamFrames, pdfPageImages, pdfText] = await Promise.all([
         // End-weighted so we get strong coverage of the final document state.
         extractVideoFramesWithTimestamps(screenBlobForFrames, 24, 1600, {
           endWeighted: true,
         }),
         extractVideoFramesWithTimestamps(webcamBlobForFrames, 8, 480),
         extractPdfPageImages(pdfFile, 6, 900),
+        extractPdfText(pdfFile).catch(() => ""),
       ]);
 
-      setUploadMsg("Running Gemini verification (this can take ~30 s)…");
+      // Pre-flight nonce check on the client so the user gets an immediate,
+      // actionable error if they forgot to type a session code into the PDF.
+      const missingClientSide = requiredNonces.filter(
+        (n) => !pdfText.toUpperCase().includes(n.toUpperCase()),
+      );
+      if (requiredNonces.length > 0 && missingClientSide.length > 0) {
+        setErrMsg(
+          `Your PDF is missing ${missingClientSide.length === 1 ? "this session code" : "these session codes"}: ${missingClientSide.join(", ")}. Open your document, type ${missingClientSide.length === 1 ? "it" : "them"} anywhere in the text, re-export the PDF, and re-attach it.`,
+        );
+        setPhase("attach");
+        return;
+      }
+
+      setUploadMsg("Running verification (this can take ~30 s)…");
       const verdict = await verifyFn({
         data: {
           screenFrames,
@@ -304,6 +463,9 @@ function RecordPage() {
           pdfPageImages,
           durationSeconds: pending.durationSeconds,
           projectName: projectName.trim(),
+          requiredNonces,
+          pdfText,
+          livenessReceipts: liveReceipts,
         },
       });
 
@@ -424,9 +586,11 @@ function RecordPage() {
           We couldn't issue this certificate
         </h1>
         <p className="mt-3 text-muted-foreground">
-          Every Bio Mark certificate has to clear six automated integrity checks
-          powered by Gemini. One or more checks didn't pass for this submission,
-          so no certificate was issued and no email was sent.
+          Every Bio Mark certificate has to clear a series of automated
+          integrity checks — including live screen-flash and pose challenges
+          and proof that randomised codes shown during the recording were
+          typed into the document. One or more checks didn't pass for this
+          submission, so no certificate was issued and no email was sent.
         </p>
         {verification.summary && (
           <p className="mt-3 rounded-md bg-card border border-border p-3 text-sm">
@@ -717,6 +881,47 @@ function RecordPage() {
             </div>
           </div>
 
+          {/* Nonce banner — codes the user must type into their document */}
+          {requiredNonces.length > 0 && (
+            <div className="mt-6 rounded-xl border border-gold/40 bg-gold/10 p-4">
+              <div className="flex items-start gap-3">
+                <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-gold" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    Type these codes into your document
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Anywhere in the text is fine. They prove this PDF was finalised
+                    during this live session — without them the certificate will be
+                    refused. New codes will appear here as you record.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {requiredNonces.map((n) => (
+                      <code
+                        key={n}
+                        className="rounded-md border border-gold/40 bg-background px-2.5 py-1 font-mono text-sm text-gold"
+                      >
+                        {n}
+                      </code>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {livenessError && (
+            <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {livenessError}
+            </p>
+          )}
+
+          <p className="mt-4 text-xs text-muted-foreground">
+            Liveness checks passed: {liveReceipts.filter((r) => r.ok).length} —
+            we'll flash your screen and ask you to perform a quick pose a couple
+            of times. Stay visible on camera.
+          </p>
+
           <RecordingControls
             elapsed={recorder.elapsed}
             paused={recorder.state === "paused"}
@@ -725,6 +930,15 @@ function RecordPage() {
             onStop={handleStop}
           />
         </div>
+      )}
+
+      {activeChallenge && phase === "live" && (
+        <LivenessOverlay
+          flashHex={activeChallenge.flashHex}
+          pose={activeChallenge.pose}
+          onSnap={handleChallengeSnap}
+          onDone={handleChallengeDone}
+        />
       )}
 
       {(phase === "attach" || phase === "uploading") && pending && (

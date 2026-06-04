@@ -1,6 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import {
+  verifyReceiptSignature,
+  type LivenessReceipt,
+} from "./liveness.functions";
 
 const frameUrl = z
   .string()
@@ -16,6 +20,19 @@ const timestampedFrame = z.object({
 
 // Accept either plain data URLs (legacy) or timestamped frames.
 const frameInput = z.union([frameUrl, timestampedFrame]);
+
+const livenessReceiptSchema = z.object({
+  challengeId: z.string().min(8).max(64),
+  nonce: z.string().min(4).max(32),
+  pose: z.string().min(1).max(64),
+  flashHex: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+  flashName: z.string().min(1).max(64),
+  issuedAt: z.number().int(),
+  verifiedAt: z.number().int(),
+  ok: z.boolean(),
+  reason: z.string().max(400).default(""),
+  hmac: z.string().min(16).max(128),
+});
 
 const schema = z.object({
   certificateId: z
@@ -33,7 +50,13 @@ const schema = z.object({
     .optional(),
   durationSeconds: z.number().int().min(0).max(60 * 60 * 24),
   projectName: z.string().trim().min(1).max(120),
+  // Anti-spoofing: nonces issued during the recording that must appear in
+  // the PDF text, plus signed liveness receipts collected mid-session.
+  requiredNonces: z.array(z.string().min(2).max(32)).max(20).optional(),
+  pdfText: z.string().max(2_000_000).optional(),
+  livenessReceipts: z.array(livenessReceiptSchema).max(20).optional(),
 });
+
 
 function formatStamp(t: number): string {
   const total = Math.max(0, Math.floor(t));
@@ -341,15 +364,68 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
       };
     });
 
-    const allPassed = checks.every((c) => c.passed);
+    // ----- Anti-spoofing: deterministic liveness + in-document nonce checks -----
+    // These run server-side, independent of Gemini's six narrative checks.
+    // They make pre-recorded webcam / screen replays much harder by requiring:
+    //   (a) at least 2 valid HMAC-signed liveness receipts (screen-flash + pose
+    //       challenges the user passed live during the recording), and
+    //   (b) every nonce issued during the recording appears in the final PDF
+    //       text.
+    const requiredNonces = (data.requiredNonces ?? [])
+      .map((n) => n.trim().toUpperCase())
+      .filter((n) => n.length > 0);
+    const pdfTextUpper = (data.pdfText ?? "").toUpperCase();
+    const livenessReceipts: LivenessReceipt[] = (data.livenessReceipts ?? []) as LivenessReceipt[];
+
+    const validReceipts = livenessReceipts.filter(
+      (r) => verifyReceiptSignature(r, userId) && r.ok,
+    );
+    const livenessOk = validReceipts.length >= 2;
+    const livenessCheck: CheckResult = {
+      key: "liveness_confirmed" as CheckKey,
+      label:
+        "Live screen-flash and pose challenges were passed during recording",
+      passed: livenessOk,
+      confidence: livenessOk ? "high" : "high",
+      reason: livenessOk
+        ? `${validReceipts.length} live challenge${validReceipts.length === 1 ? "" : "s"} passed (screen-flash colour + pose, verified on the live webcam).`
+        : livenessReceipts.length === 0
+          ? "No live challenges were completed. A pre-recorded webcam feed cannot react to the screen flash and pose prompts shown during the session."
+          : `Only ${validReceipts.length}/${livenessReceipts.length} live challenges passed — at least 2 are required to rule out a spoofed webcam feed.`,
+    };
+
+    const missingNonces = requiredNonces.filter(
+      (n) => !pdfTextUpper.includes(n),
+    );
+    const nonceOk = requiredNonces.length > 0 && missingNonces.length === 0;
+    const nonceCheck: CheckResult = {
+      key: "nonce_in_document" as CheckKey,
+      label:
+        "Random codes shown during the recording were typed into the document",
+      passed: nonceOk,
+      confidence: "high",
+      reason: nonceOk
+        ? `All ${requiredNonces.length} session codes were found in the PDF text — proving the document was finalised during this live session.`
+        : requiredNonces.length === 0
+          ? "No session codes were submitted. A pre-recorded screen feed cannot contain codes that didn't exist when it was recorded."
+          : `Missing session code${missingNonces.length === 1 ? "" : "s"} in the PDF text: ${missingNonces.join(", ")}. Type the codes shown during recording into the document before finalising.`,
+    };
+
+    const finalChecks: CheckResult[] = [...checks, livenessCheck, nonceCheck];
+    const allPassed = finalChecks.every((c) => c.passed);
     const status = allPassed ? "verified" : "rejected";
 
     if (data.certificateId) {
       const notes = {
-        checks: checks.map((c) => ({ ...c })),
+        checks: finalChecks.map((c) => ({ ...c })),
         summary: parsed.summary ?? "",
         screenEvidence,
         rawChecks: rawChecks.map((c) => ({ ...c })),
+        liveness: {
+          totalReceipts: livenessReceipts.length,
+          validReceipts: validReceipts.length,
+        },
+        requiredNonces,
       } as unknown as Record<string, unknown>;
       const { error: updErr } = await supabase
         .from("certificates")
@@ -368,7 +444,7 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
       status,
       summary: parsed.summary ?? "",
       screenEvidence,
-      checks,
+      checks: finalChecks,
     };
   });
 
