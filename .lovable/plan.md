@@ -1,34 +1,39 @@
-## Diagnosis
+## Goal
 
-`CERT-HY6N-JZ` shows the same pattern: Gemini failed the screen/document checks with “no authoring application,” but the appeal was manually reversed and issued. One important detail: this was a **17-second recording**, so the current 24-frame sparse sampler may still miss very short typing/document transitions or show frames that are too downscaled for Gemini to identify the authoring surface reliably.
+Stop interrupting the user while they write. Replace the mid-session liveness scheduler with **one** liveness challenge that runs at the moment the user clicks **Stop** — the recording cannot be finalized until that single challenge passes.
 
-## Plan
+The in-document nonce (typed-code-in-PDF) stays as-is; only the webcam/screen-flash liveness UX changes.
 
-1. **Replace sparse frame-only review with a richer evidence packet**
-   - Add deterministic timestamps that always include: first frame, early progress, midpoint, late progress, and the final frame.
-   - For short recordings, sample more densely across the whole video instead of only “end-weighted” frames.
-   - Increase screen-frame detail enough for Word/Google Docs/editor UI and typed text to be readable.
+## Changes
 
-2. **Add visual timeline/context frames for Gemini**
-   - Include a small set of “difference/progress” frames or adjacent timestamp clusters so Gemini can see whether document content changes over time rather than treating frames independently.
-   - Label frames as `SCREEN START`, `SCREEN PROGRESS`, `SCREEN FINAL`, etc., not just timestamps.
+### 1. `src/routes/_authenticated.record.tsx`
+- Remove the random-interval scheduler (`livenessTimerRef`, the 20–40s timeout, and the recurring 45–90s re-arm). Delete the `useEffect` that schedules mid-session challenges.
+- Keep the **opening nonce** issuance on record start (so the user still has a code to type into their document during the session) — this is silent, no overlay.
+- Rework `handleStop` into a two-phase flow:
+  1. **Pause** the MediaRecorder (do not stop yet) and keep the webcam stream live.
+  2. Call `runLivenessChallenge()` — issues challenge, shows `LivenessOverlay`, snaps webcam frame, submits, stores receipt.
+  3. On pass → resume briefly to flush, then actually stop and proceed to upload/verify.
+  4. On fail → show inline error, allow the user to **Retry liveness** (re-issue) up to N times (e.g. 3). If they exhaust retries, surface "Liveness failed — recording cannot be submitted" with an option to discard.
+- Disable the Stop button while the end-of-recording challenge is in flight so it can't be double-triggered.
+- Remove the persistent "Liveness checks passed: X" status line; replace with a single "Liveness: pending / passed / failed" indicator near Stop.
 
-3. **Make rejection rules conservative in code, not only in the prompt**
-   - After Gemini returns checks, add a server-side guardrail: if the two screen-authorship checks fail only because “no authoring app / not shown / impossible to confirm,” downgrade those failures to pass-low-confidence unless Gemini provides concrete contradictory evidence.
-   - Keep strict failures for actual contradiction, blank/unrelated final document, AI-generation evidence, person mismatch, other people, or transcription concerns.
+### 2. `src/components/RecordingControls.tsx` (light touch)
+- Add a `stopPending` / `stopLabel` prop so the Stop button can render "Finishing… hold pose" while the end challenge runs.
 
-4. **Persist debugging evidence**
-   - Store the new `screenEvidence` summary when certificates are issued and when appeals are submitted/reversed so future examples show whether Gemini focused on the wrong surface.
-   - Preserve the public six checks unchanged.
+### 3. `src/lib/verification.functions.ts`
+- Lower the required-receipt threshold from `>= 2` to `>= 1` in the `livenessCheck` block (since we now only run one challenge). Update the reason strings accordingly ("1 live challenge passed at end of recording").
+- No schema changes; `livenessReceipts` array continues to accept 0–20 entries.
 
-5. **Adjust final certificate/appeal data flow**
-   - Pass `screenEvidence` through `createCertificate`, appeal submission, and manual reversal so the metadata is not lost after issuing/reversing a certificate.
+### 4. `LivenessOverlay`
+- No structural change. Optionally bump `durationMs` slightly (e.g. 2600ms) so the end-of-session pose is easier to hit on the first try.
 
-## Files to update
+## Anti-spoof posture after this change
 
-- `src/lib/media-sampling.ts` — denser short-recording sampling and clearer timestamp/frame labeling support.
-- `src/routes/_authenticated.record.tsx` — use the improved sampler and pass `screenEvidence` through certificate/appeal flows.
-- `src/lib/verification.functions.ts` — stricter prompt wording plus server-side false-positive guardrail.
-- `src/lib/certificates.functions.ts` — accept and store optional `screenEvidence`.
-- `src/lib/appeals.functions.ts` — accept/store/pass optional `screenEvidence` through appeal review and reversal.
-- `src/routes/appeals.$token.tsx` — display screen-evidence notes for reviewer debugging.
+- A pre-recorded webcam feed still cannot pass the end-of-session challenge (random pose + random screen-flash colour issued server-side at click time).
+- A pre-recorded screen feed still cannot contain the opening nonce that was issued at record-start for this session — it must appear in the final PDF.
+- Net effect: one live interaction required, at a moment the user is already stopping to review → minimal disruption, same spoof resistance against pure replay attacks. A live human-in-the-loop attacker is still required to defeat it (unchanged from the previous design).
+
+## Out of scope
+
+- No change to nonce generation, PDF text extraction, or the Gemini prompt.
+- No DB / migration changes.
