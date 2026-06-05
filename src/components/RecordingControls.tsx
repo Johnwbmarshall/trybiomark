@@ -1,4 +1,4 @@
-import { Loader2, Pause, Play, Square } from "lucide-react";
+import { Pause, Play, Square } from "lucide-react";
 
 interface Props {
   elapsed: number;
@@ -6,22 +6,9 @@ interface Props {
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
-  /** When true, the Stop button is disabled and shows a spinner —
-   *  used while the end-of-recording liveness check is in flight. */
-  stopPending?: boolean;
-  /** Optional override for the Stop button label. */
-  stopLabel?: string;
 }
 
-export function RecordingControls({
-  elapsed,
-  paused,
-  onPause,
-  onResume,
-  onStop,
-  stopPending = false,
-  stopLabel,
-}: Props) {
+export function RecordingControls({ elapsed, paused, onPause, onResume, onStop }: Props) {
   const m = Math.floor(elapsed / 60)
     .toString()
     .padStart(2, "0");
@@ -45,8 +32,7 @@ export function RecordingControls({
         {paused ? (
           <button
             onClick={onResume}
-            disabled={stopPending}
-            className="inline-flex items-center gap-1.5 rounded-full bg-gold px-3 py-1.5 text-xs font-medium text-background hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-full bg-gold px-3 py-1.5 text-xs font-medium text-background hover:opacity-90"
           >
             <Play className="h-3.5 w-3.5 fill-current" />
             Resume
@@ -54,8 +40,7 @@ export function RecordingControls({
         ) : (
           <button
             onClick={onPause}
-            disabled={stopPending}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-secondary disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-secondary"
           >
             <Pause className="h-3.5 w-3.5 fill-current" />
             Pause
@@ -63,15 +48,10 @@ export function RecordingControls({
         )}
         <button
           onClick={onStop}
-          disabled={stopPending}
-          className="inline-flex items-center gap-1.5 rounded-full bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-70"
+          className="inline-flex items-center gap-1.5 rounded-full bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground hover:opacity-90"
         >
-          {stopPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Square className="h-3.5 w-3.5 fill-current" />
-          )}
-          {stopLabel ?? "Stop"}
+          <Square className="h-3.5 w-3.5 fill-current" />
+          Stop
         </button>
       </div>
     </div>

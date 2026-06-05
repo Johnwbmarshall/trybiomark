@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { useMediaRecorder } from "@/hooks/useMediaRecorder";
@@ -9,25 +9,14 @@ import { finalizeCertificate } from "@/lib/certificate-finalize.functions";
 import { createDraft, getDraft, deleteDraft } from "@/lib/drafts.functions";
 import { getMyProfile } from "@/lib/profile.functions";
 import { verifySubmission, type CheckResult } from "@/lib/verification.functions";
-import {
-  issueLivenessChallenge,
-  submitLivenessChallenge,
-  type LivenessChallenge,
-  type LivenessReceipt,
-} from "@/lib/liveness.functions";
-import {
-  extractVideoFramesWithTimestamps,
-  extractPdfPageImages,
-  extractPdfText,
-} from "@/lib/media-sampling";
+import { extractVideoFramesWithTimestamps, extractPdfPageImages } from "@/lib/media-sampling";
 import { generateCombinedPdf } from "@/lib/certificate-pdf";
 import { sendTransactionalEmail } from "@/lib/email/send";
 import { submitAppeal } from "@/lib/appeals.functions";
 import { PreflightChecklist } from "@/components/PreflightChecklist";
 import { RecordingControls } from "@/components/RecordingControls";
-import { LivenessOverlay } from "@/components/LivenessOverlay";
 import { useQuery } from "@tanstack/react-query";
-import { Video, Download, Copy, Check, X, FileText, Save, Camera, ShieldCheck, Sparkles } from "lucide-react";
+import { Video, Download, Copy, Check, X, FileText, Save, Camera, ShieldCheck } from "lucide-react";
 
 const searchSchema = z.object({
   draft: z.string().uuid().optional(),
@@ -91,26 +80,9 @@ function RecordPage() {
   const getProfileFn = useServerFn(getMyProfile);
   const verifyFn = useServerFn(verifySubmission);
   const submitAppealFn = useServerFn(submitAppeal);
-  const issueChallengeFn = useServerFn(issueLivenessChallenge);
-  const submitChallengeFn = useServerFn(submitLivenessChallenge);
   const [appealNote, setAppealNote] = useState("");
   const [appealing, setAppealing] = useState(false);
   const [appealSent, setAppealSent] = useState(false);
-
-  // ----- Anti-spoofing liveness state -----
-  // Only the end-of-recording liveness challenge runs; mid-session prompts
-  // were too disruptive and easy to miss when users are focused on their
-  // word processor.
-  const [activeChallenge, setActiveChallenge] = useState<LivenessChallenge | null>(null);
-  const [liveReceipts, setLiveReceipts] = useState<LivenessReceipt[]>([]);
-  const [requiredNonces, setRequiredNonces] = useState<string[]>([]);
-  const [livenessError, setLivenessError] = useState<string | null>(null);
-  // "idle" before stop is clicked, "running" while the end challenge is on
-  // screen, "failed" after a failed attempt (user can click Stop again to
-  // retry), "passed" after success (the actual recorder.stop() then runs).
-  const [endLivenessState, setEndLivenessState] = useState<
-    "idle" | "running" | "failed" | "passed"
-  >("idle");
 
   const { data: profileData, isLoading: profileLoading } = useQuery({
     queryKey: ["my-profile"],
@@ -200,56 +172,7 @@ function RecordPage() {
     setPhase("setup");
   };
 
-  // Snap a single frame from the live webcam stream for liveness verification.
-  const snapWebcamFrame = useCallback((): string | null => {
-    const v = webcamVideoRef.current;
-    if (!v) return null;
-    const w = v.videoWidth || 640;
-    const h = v.videoHeight || 480;
-    if (w === 0 || h === 0) return null;
-    const scale = Math.min(1, 480 / Math.max(w, h));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(w * scale);
-    canvas.height = Math.round(h * scale);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    try {
-      ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-    } catch {
-      return null;
-    }
-    return canvas.toDataURL("image/jpeg", 0.7);
-  }, []);
-
-  // Issue the OPENING nonce as soon as recording begins so the user has a
-  // code to type into their document. No overlay — the code just appears in
-  // the banner above the controls.
-  useEffect(() => {
-    if (phase !== "live") return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const opening = await issueChallengeFn();
-        if (cancelled) return;
-        setRequiredNonces((prev) =>
-          prev.length === 0 ? [opening.nonce] : prev,
-        );
-      } catch (e) {
-        if (!cancelled) {
-          setLivenessError(
-            e instanceof Error ? e.message : "Could not issue session code.",
-          );
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
-
-  // Perform the real recorder.stop() once liveness has passed.
-  const performActualStop = useCallback(async () => {
+  const handleStop = async () => {
     try {
       const result = await recorder.stop();
       setPending({
@@ -260,79 +183,6 @@ function RecordPage() {
       setPhase("attach");
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "Could not stop recording.");
-      setEndLivenessState("failed");
-    }
-  }, [recorder]);
-
-  const handleChallengeSnap = useCallback(async () => {
-    const challenge = activeChallenge;
-    if (!challenge) return;
-    const frame = snapWebcamFrame();
-    if (!frame) {
-      setLivenessError(
-        "Could not capture webcam frame for liveness check. Click Stop to try again.",
-      );
-      setEndLivenessState("failed");
-      return;
-    }
-    try {
-      const receipt = await submitChallengeFn({
-        data: { challenge, webcamFrameDataUrl: frame },
-      });
-      setLiveReceipts((prev) => [...prev, receipt]);
-      if (receipt.ok) {
-        setEndLivenessState("passed");
-        setLivenessError(null);
-        // Actually stop the recorder now that liveness is confirmed.
-        await performActualStop();
-      } else {
-        setEndLivenessState("failed");
-        setLivenessError(
-          `Liveness check did not pass: ${receipt.reason || "pose or screen-flash colour not detected."} Click Stop to try again.`,
-        );
-      }
-    } catch (e) {
-      setEndLivenessState("failed");
-      setLivenessError(
-        e instanceof Error ? e.message : "Liveness check failed.",
-      );
-    }
-  }, [activeChallenge, snapWebcamFrame, submitChallengeFn, performActualStop]);
-
-  const handleChallengeDone = useCallback(() => {
-    setActiveChallenge(null);
-  }, []);
-
-  // Clicking Stop now runs ONE liveness challenge first. The actual
-  // recorder.stop() only happens after the challenge passes (see
-  // performActualStop, called from handleChallengeSnap on success).
-  const handleStop = async () => {
-    if (endLivenessState === "running") return;
-    if (endLivenessState === "passed") return;
-    setLivenessError(null);
-    setEndLivenessState("running");
-    // Pause the recorder so the user can focus on the pose without burning
-    // recording time. MediaRecorder.stop() works on a paused recorder.
-    if (recorder.state === "recording") {
-      try {
-        recorder.pause();
-      } catch {
-        /* ignore */
-      }
-    }
-    try {
-      const challenge = await issueChallengeFn();
-      setRequiredNonces((prev) =>
-        Array.from(new Set([...prev, challenge.nonce])),
-      );
-      setActiveChallenge(challenge);
-    } catch (e) {
-      setEndLivenessState("failed");
-      setLivenessError(
-        e instanceof Error
-          ? e.message
-          : "Could not start the end-of-recording liveness check. Click Stop to try again.",
-      );
     }
   };
 
@@ -437,30 +287,16 @@ function RecordPage() {
       }
 
       setUploadMsg("Sampling recording for verification…");
-      const [screenFrames, webcamFrames, pdfPageImages, pdfText] = await Promise.all([
+      const [screenFrames, webcamFrames, pdfPageImages] = await Promise.all([
         // End-weighted so we get strong coverage of the final document state.
         extractVideoFramesWithTimestamps(screenBlobForFrames, 24, 1600, {
           endWeighted: true,
         }),
         extractVideoFramesWithTimestamps(webcamBlobForFrames, 8, 480),
         extractPdfPageImages(pdfFile, 6, 900),
-        extractPdfText(pdfFile).catch(() => ""),
       ]);
 
-      // Pre-flight nonce check on the client so the user gets an immediate,
-      // actionable error if they forgot to type a session code into the PDF.
-      const missingClientSide = requiredNonces.filter(
-        (n) => !pdfText.toUpperCase().includes(n.toUpperCase()),
-      );
-      if (requiredNonces.length > 0 && missingClientSide.length > 0) {
-        setErrMsg(
-          `Your PDF is missing ${missingClientSide.length === 1 ? "this session code" : "these session codes"}: ${missingClientSide.join(", ")}. Open your document, type ${missingClientSide.length === 1 ? "it" : "them"} anywhere in the text, re-export the PDF, and re-attach it.`,
-        );
-        setPhase("attach");
-        return;
-      }
-
-      setUploadMsg("Running verification (this can take ~30 s)…");
+      setUploadMsg("Running Gemini verification (this can take ~30 s)…");
       const verdict = await verifyFn({
         data: {
           screenFrames,
@@ -468,9 +304,6 @@ function RecordPage() {
           pdfPageImages,
           durationSeconds: pending.durationSeconds,
           projectName: projectName.trim(),
-          requiredNonces,
-          pdfText,
-          livenessReceipts: liveReceipts,
         },
       });
 
@@ -591,11 +424,9 @@ function RecordPage() {
           We couldn't issue this certificate
         </h1>
         <p className="mt-3 text-muted-foreground">
-          Every Bio Mark certificate has to clear a series of automated
-          integrity checks — including live screen-flash and pose challenges
-          and proof that randomised codes shown during the recording were
-          typed into the document. One or more checks didn't pass for this
-          submission, so no certificate was issued and no email was sent.
+          Every Bio Mark certificate has to clear six automated integrity checks
+          powered by Gemini. One or more checks didn't pass for this submission,
+          so no certificate was issued and no email was sent.
         </p>
         {verification.summary && (
           <p className="mt-3 rounded-md bg-card border border-border p-3 text-sm">
@@ -886,79 +717,14 @@ function RecordPage() {
             </div>
           </div>
 
-          {/* Nonce banner — codes the user must type into their document */}
-          {requiredNonces.length > 0 && (
-            <div className="mt-6 rounded-xl border border-gold/40 bg-gold/10 p-4">
-              <div className="flex items-start gap-3">
-                <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-gold" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium">
-                    Type these codes into your document
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Anywhere in the text is fine. They prove this PDF was finalised
-                    during this live session — without them the certificate will be
-                    refused. New codes will appear here as you record.
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {requiredNonces.map((n) => (
-                      <code
-                        key={n}
-                        className="rounded-md border border-gold/40 bg-background px-2.5 py-1 font-mono text-sm text-gold"
-                      >
-                        {n}
-                      </code>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {livenessError && (
-            <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {livenessError}
-            </p>
-          )}
-
-          <p className="mt-4 text-xs text-muted-foreground">
-            Liveness:{" "}
-            {endLivenessState === "passed" ? (
-              <span className="text-gold">passed</span>
-            ) : endLivenessState === "running" ? (
-              <span>checking…</span>
-            ) : endLivenessState === "failed" ? (
-              <span className="text-destructive">failed — click Stop to retry</span>
-            ) : (
-              <span>runs once when you click Stop — stay visible on camera.</span>
-            )}
-          </p>
-
           <RecordingControls
             elapsed={recorder.elapsed}
             paused={recorder.state === "paused"}
             onPause={recorder.pause}
             onResume={recorder.resume}
             onStop={handleStop}
-            stopPending={endLivenessState === "running"}
-            stopLabel={
-              endLivenessState === "running"
-                ? "Hold pose…"
-                : endLivenessState === "failed"
-                  ? "Retry & stop"
-                  : undefined
-            }
           />
         </div>
-      )}
-
-      {activeChallenge && (
-        <LivenessOverlay
-          flashHex={activeChallenge.flashHex}
-          pose={activeChallenge.pose}
-          onSnap={handleChallengeSnap}
-          onDone={handleChallengeDone}
-        />
       )}
 
       {(phase === "attach" || phase === "uploading") && pending && (
