@@ -374,6 +374,7 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
     const pdfTextUpper = (data.pdfText ?? "").toUpperCase();
     const livenessReceipts: LivenessReceipt[] = (data.livenessReceipts ?? []) as LivenessReceipt[];
 
+    const { verifyReceiptSignature } = await import("./liveness.server");
     const validReceipts = livenessReceipts.filter(
       (r) => verifyReceiptSignature(r, userId) && r.ok,
     );
