@@ -98,12 +98,19 @@ function RecordPage() {
   const [appealSent, setAppealSent] = useState(false);
 
   // ----- Anti-spoofing liveness state -----
+  // Only the end-of-recording liveness challenge runs; mid-session prompts
+  // were too disruptive and easy to miss when users are focused on their
+  // word processor.
   const [activeChallenge, setActiveChallenge] = useState<LivenessChallenge | null>(null);
   const [liveReceipts, setLiveReceipts] = useState<LivenessReceipt[]>([]);
   const [requiredNonces, setRequiredNonces] = useState<string[]>([]);
   const [livenessError, setLivenessError] = useState<string | null>(null);
-  const livenessTimerRef = useRef<number | null>(null);
-  const livenessBusyRef = useRef(false);
+  // "idle" before stop is clicked, "running" while the end challenge is on
+  // screen, "failed" after a failed attempt (user can click Stop again to
+  // retry), "passed" after success (the actual recorder.stop() then runs).
+  const [endLivenessState, setEndLivenessState] = useState<
+    "idle" | "running" | "failed" | "passed"
+  >("idle");
 
   const { data: profileData, isLoading: profileLoading } = useQuery({
     queryKey: ["my-profile"],
@@ -214,49 +221,9 @@ function RecordPage() {
     return canvas.toDataURL("image/jpeg", 0.7);
   }, []);
 
-  // Run a single liveness challenge: issue → show overlay → snap frame →
-  // submit → store receipt + nonce. Returns when done (overlay closed).
-  const runOneChallenge = useCallback(async () => {
-    if (livenessBusyRef.current) return;
-    livenessBusyRef.current = true;
-    setLivenessError(null);
-    try {
-      const challenge = await issueChallengeFn();
-      setRequiredNonces((prev) => Array.from(new Set([...prev, challenge.nonce])));
-      setActiveChallenge(challenge);
-      // The overlay snaps the frame mid-way and then calls onDone after a moment.
-      // We resolve when onDone fires — see the overlay handlers below.
-    } catch (e) {
-      livenessBusyRef.current = false;
-      setLivenessError(
-        e instanceof Error ? e.message : "Could not start liveness challenge.",
-      );
-    }
-  }, [issueChallengeFn]);
-
-  // Schedule challenges at random intervals during the live phase.
-  useEffect(() => {
-    if (phase !== "live" || recorder.state !== "recording") return;
-    const scheduleNext = (minMs: number, maxMs: number) => {
-      const delay = minMs + Math.random() * (maxMs - minMs);
-      livenessTimerRef.current = window.setTimeout(async () => {
-        await runOneChallenge();
-        // Schedule another one if user keeps recording.
-        scheduleNext(55_000, 95_000);
-      }, delay);
-    };
-    // First challenge between 20 and 40 seconds in.
-    scheduleNext(20_000, 40_000);
-    return () => {
-      if (livenessTimerRef.current) {
-        window.clearTimeout(livenessTimerRef.current);
-        livenessTimerRef.current = null;
-      }
-    };
-  }, [phase, recorder.state, runOneChallenge]);
-
   // Issue the OPENING nonce as soon as recording begins so the user has a
-  // code to type into their document right away.
+  // code to type into their document. No overlay — the code just appears in
+  // the banner above the controls.
   useEffect(() => {
     if (phase !== "live") return;
     let cancelled = false;
@@ -264,7 +231,6 @@ function RecordPage() {
       try {
         const opening = await issueChallengeFn();
         if (cancelled) return;
-        // Only register the nonce — don't show the overlay for the opening one.
         setRequiredNonces((prev) =>
           prev.length === 0 ? [opening.nonce] : prev,
         );
@@ -282,42 +248,8 @@ function RecordPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  const handleChallengeSnap = useCallback(async () => {
-    const challenge = activeChallenge;
-    if (!challenge) return;
-    const frame = snapWebcamFrame();
-    if (!frame) {
-      setLivenessError("Could not capture webcam frame for liveness check.");
-      return;
-    }
-    try {
-      const receipt = await submitChallengeFn({
-        data: { challenge, webcamFrameDataUrl: frame },
-      });
-      setLiveReceipts((prev) => [...prev, receipt]);
-      if (!receipt.ok) {
-        setLivenessError(
-          `Liveness check did not pass: ${receipt.reason || "pose or screen-flash colour not detected."} Another challenge will follow.`,
-        );
-      }
-    } catch (e) {
-      setLivenessError(
-        e instanceof Error ? e.message : "Liveness check failed.",
-      );
-    }
-  }, [activeChallenge, snapWebcamFrame, submitChallengeFn]);
-
-  const handleChallengeDone = useCallback(() => {
-    setActiveChallenge(null);
-    livenessBusyRef.current = false;
-  }, []);
-
-  const handleStop = async () => {
-    if (livenessTimerRef.current) {
-      window.clearTimeout(livenessTimerRef.current);
-      livenessTimerRef.current = null;
-    }
-    setActiveChallenge(null);
+  // Perform the real recorder.stop() once liveness has passed.
+  const performActualStop = useCallback(async () => {
     try {
       const result = await recorder.stop();
       setPending({
@@ -328,6 +260,79 @@ function RecordPage() {
       setPhase("attach");
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : "Could not stop recording.");
+      setEndLivenessState("failed");
+    }
+  }, [recorder]);
+
+  const handleChallengeSnap = useCallback(async () => {
+    const challenge = activeChallenge;
+    if (!challenge) return;
+    const frame = snapWebcamFrame();
+    if (!frame) {
+      setLivenessError(
+        "Could not capture webcam frame for liveness check. Click Stop to try again.",
+      );
+      setEndLivenessState("failed");
+      return;
+    }
+    try {
+      const receipt = await submitChallengeFn({
+        data: { challenge, webcamFrameDataUrl: frame },
+      });
+      setLiveReceipts((prev) => [...prev, receipt]);
+      if (receipt.ok) {
+        setEndLivenessState("passed");
+        setLivenessError(null);
+        // Actually stop the recorder now that liveness is confirmed.
+        await performActualStop();
+      } else {
+        setEndLivenessState("failed");
+        setLivenessError(
+          `Liveness check did not pass: ${receipt.reason || "pose or screen-flash colour not detected."} Click Stop to try again.`,
+        );
+      }
+    } catch (e) {
+      setEndLivenessState("failed");
+      setLivenessError(
+        e instanceof Error ? e.message : "Liveness check failed.",
+      );
+    }
+  }, [activeChallenge, snapWebcamFrame, submitChallengeFn, performActualStop]);
+
+  const handleChallengeDone = useCallback(() => {
+    setActiveChallenge(null);
+  }, []);
+
+  // Clicking Stop now runs ONE liveness challenge first. The actual
+  // recorder.stop() only happens after the challenge passes (see
+  // performActualStop, called from handleChallengeSnap on success).
+  const handleStop = async () => {
+    if (endLivenessState === "running") return;
+    if (endLivenessState === "passed") return;
+    setLivenessError(null);
+    setEndLivenessState("running");
+    // Pause the recorder so the user can focus on the pose without burning
+    // recording time. MediaRecorder.stop() works on a paused recorder.
+    if (recorder.state === "recording") {
+      try {
+        recorder.pause();
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      const challenge = await issueChallengeFn();
+      setRequiredNonces((prev) =>
+        Array.from(new Set([...prev, challenge.nonce])),
+      );
+      setActiveChallenge(challenge);
+    } catch (e) {
+      setEndLivenessState("failed");
+      setLivenessError(
+        e instanceof Error
+          ? e.message
+          : "Could not start the end-of-recording liveness check. Click Stop to try again.",
+      );
     }
   };
 
@@ -917,9 +922,16 @@ function RecordPage() {
           )}
 
           <p className="mt-4 text-xs text-muted-foreground">
-            Liveness checks passed: {liveReceipts.filter((r) => r.ok).length} —
-            we'll flash your screen and ask you to perform a quick pose a couple
-            of times. Stay visible on camera.
+            Liveness:{" "}
+            {endLivenessState === "passed" ? (
+              <span className="text-gold">passed</span>
+            ) : endLivenessState === "running" ? (
+              <span>checking…</span>
+            ) : endLivenessState === "failed" ? (
+              <span className="text-destructive">failed — click Stop to retry</span>
+            ) : (
+              <span>runs once when you click Stop — stay visible on camera.</span>
+            )}
           </p>
 
           <RecordingControls
@@ -928,11 +940,19 @@ function RecordPage() {
             onPause={recorder.pause}
             onResume={recorder.resume}
             onStop={handleStop}
+            stopPending={endLivenessState === "running"}
+            stopLabel={
+              endLivenessState === "running"
+                ? "Hold pose…"
+                : endLivenessState === "failed"
+                  ? "Retry & stop"
+                  : undefined
+            }
           />
         </div>
       )}
 
-      {activeChallenge && phase === "live" && (
+      {activeChallenge && (
         <LivenessOverlay
           flashHex={activeChallenge.flashHex}
           pose={activeChallenge.pose}
