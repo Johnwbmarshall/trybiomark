@@ -380,18 +380,18 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
     const validReceipts = livenessReceipts.filter(
       (r) => verifyReceiptSignature(r, userId) && r.ok,
     );
-    const livenessOk = validReceipts.length >= 2;
+    const livenessOk = validReceipts.length >= 1;
     const livenessCheck: CheckResult = {
       key: "liveness_confirmed" as CheckKey,
       label:
-        "Live screen-flash and pose challenges were passed during recording",
+        "Live screen-flash and pose challenge was passed at the end of recording",
       passed: livenessOk,
       confidence: livenessOk ? "high" : "high",
       reason: livenessOk
-        ? `${validReceipts.length} live challenge${validReceipts.length === 1 ? "" : "s"} passed (screen-flash colour + pose, verified on the live webcam).`
+        ? `End-of-recording live challenge passed (screen-flash colour + pose, verified on the live webcam).`
         : livenessReceipts.length === 0
-          ? "No live challenges were completed. A pre-recorded webcam feed cannot react to the screen flash and pose prompts shown during the session."
-          : `Only ${validReceipts.length}/${livenessReceipts.length} live challenges passed — at least 2 are required to rule out a spoofed webcam feed.`,
+          ? "No live challenge was completed before stopping. A pre-recorded webcam feed cannot react to the screen flash and pose prompt shown when Stop is clicked."
+          : `The end-of-recording live challenge did not pass (${validReceipts.length}/${livenessReceipts.length}). A passing challenge is required to rule out a spoofed webcam feed.`,
     };
 
     const missingNonces = requiredNonces.filter(
