@@ -1,33 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { createHmac, randomBytes } from "crypto";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-// ----- Shared constants -----
-
-export const POSE_PROMPTS = [
-  "Look LEFT",
-  "Look RIGHT",
-  "Look UP",
-  "Look DOWN",
-  "Tilt your head LEFT",
-  "Tilt your head RIGHT",
-  "Open your mouth wide",
-  "Raise your LEFT hand",
-  "Raise your RIGHT hand",
-  "Show a thumbs up",
-] as const;
-
-// Vivid, distinctive flash colors. Picked so the average tint difference
-// is easy to detect in a webcam frame.
-export const FLASH_COLORS = [
-  { hex: "#FF2D55", name: "vivid red-pink" },
-  { hex: "#22C55E", name: "bright green" },
-  { hex: "#3B82F6", name: "strong blue" },
-  { hex: "#F59E0B", name: "warm orange-amber" },
-  { hex: "#A855F7", name: "vivid purple" },
-  { hex: "#06B6D4", name: "bright cyan" },
-] as const;
+// NOTE: this file is imported by client route code. Keep top-level imports
+// client-safe. All server-only helpers (crypto, signing, constants) live in
+// `./liveness.server` and are loaded INSIDE `.handler()` bodies via
+// `await import(...)`. See `tanstack-supabase-import-graph`.
 
 export type LivenessChallenge = {
   challengeId: string;
@@ -35,8 +13,8 @@ export type LivenessChallenge = {
   pose: string;
   flashHex: string;
   flashName: string;
-  issuedAt: number; // ms epoch
-  expiresAt: number; // ms epoch
+  issuedAt: number;
+  expiresAt: number;
   hmac: string;
 };
 
@@ -53,86 +31,26 @@ export type LivenessReceipt = {
   hmac: string;
 };
 
-const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-
-function signingSecret(): string {
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.LOVABLE_API_KEY ??
-    "bio-mark-dev-fallback-secret";
-  return `liveness-v1:${key}`;
-}
-
-function sign(payload: string): string {
-  return createHmac("sha256", signingSecret()).update(payload).digest("hex");
-}
-
-function challengePayload(c: {
-  challengeId: string;
-  nonce: string;
-  pose: string;
-  flashHex: string;
-  issuedAt: number;
-  expiresAt: number;
-  userId: string;
-}): string {
-  return [
-    "challenge",
-    c.challengeId,
-    c.nonce,
-    c.pose,
-    c.flashHex,
-    c.issuedAt,
-    c.expiresAt,
-    c.userId,
-  ].join("|");
-}
-
-function receiptPayload(r: {
-  challengeId: string;
-  nonce: string;
-  pose: string;
-  flashHex: string;
-  issuedAt: number;
-  verifiedAt: number;
-  ok: boolean;
-  userId: string;
-}): string {
-  return [
-    "receipt",
-    r.challengeId,
-    r.nonce,
-    r.pose,
-    r.flashHex,
-    r.issuedAt,
-    r.verifiedAt,
-    r.ok ? "1" : "0",
-    r.userId,
-  ].join("|");
-}
-
-function randomNonce(): string {
-  // 4 character base32-ish nonce; uppercase only, unambiguous chars.
-  const ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const buf = randomBytes(4);
-  let s = "";
-  for (let i = 0; i < 4; i++) s += ALPHA[buf[i] % ALPHA.length];
-  return `BIO-${s}`;
-}
-
-function pick<T>(arr: readonly T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
 // ----- Issue a fresh challenge -----
 
 export const issueLivenessChallenge = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<LivenessChallenge> => {
+    const {
+      POSE_PROMPTS,
+      FLASH_COLORS,
+      CHALLENGE_TTL_MS,
+      sign,
+      challengePayload,
+      randomNonce,
+      randomChallengeId,
+      pick,
+    } = await import("./liveness.server");
+
     const { userId } = context;
     const issuedAt = Date.now();
     const expiresAt = issuedAt + CHALLENGE_TTL_MS;
-    const challengeId = randomBytes(8).toString("hex");
+    const challengeId = randomChallengeId();
     const nonce = randomNonce();
     const pose = pick(POSE_PROMPTS);
     const color = pick(FLASH_COLORS);
@@ -161,7 +79,7 @@ export const issueLivenessChallenge = createServerFn({ method: "POST" })
     };
   });
 
-// ----- Submit a captured webcam frame; ask Gemini to verify; issue a receipt -----
+// ----- Submit a captured webcam frame; verify; issue a receipt -----
 
 const dataUrl = z
   .string()
@@ -187,6 +105,10 @@ export const submitLivenessChallenge = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => submitSchema.parse(input))
   .handler(async ({ data, context }): Promise<LivenessReceipt> => {
+    const { sign, challengePayload, receiptPayload } = await import(
+      "./liveness.server"
+    );
+
     const { userId } = context;
     const c = data.challenge;
 
@@ -315,24 +237,3 @@ export const submitLivenessChallenge = createServerFn({ method: "POST" })
       hmac,
     };
   });
-
-// ----- Server-side helper used by verifySubmission to validate a receipt -----
-
-export function verifyReceiptSignature(
-  r: LivenessReceipt,
-  userId: string,
-): boolean {
-  const expected = sign(
-    receiptPayload({
-      challengeId: r.challengeId,
-      nonce: r.nonce,
-      pose: r.pose,
-      flashHex: r.flashHex,
-      issuedAt: r.issuedAt,
-      verifiedAt: r.verifiedAt,
-      ok: r.ok,
-      userId,
-    }),
-  );
-  return expected === r.hmac;
-}

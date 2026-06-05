@@ -1,10 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import {
-  verifyReceiptSignature,
-  type LivenessReceipt,
-} from "./liveness.functions";
+import { type LivenessReceipt } from "./liveness.functions";
 
 const frameUrl = z
   .string()
@@ -377,6 +374,7 @@ Order below: SELFIE, then WEBCAM frames with timestamps, then SCREEN frames with
     const pdfTextUpper = (data.pdfText ?? "").toUpperCase();
     const livenessReceipts: LivenessReceipt[] = (data.livenessReceipts ?? []) as LivenessReceipt[];
 
+    const { verifyReceiptSignature } = await import("./liveness.server");
     const validReceipts = livenessReceipts.filter(
       (r) => verifyReceiptSignature(r, userId) && r.ok,
     );
