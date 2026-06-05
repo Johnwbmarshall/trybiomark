@@ -922,9 +922,16 @@ function RecordPage() {
           )}
 
           <p className="mt-4 text-xs text-muted-foreground">
-            Liveness checks passed: {liveReceipts.filter((r) => r.ok).length} —
-            we'll flash your screen and ask you to perform a quick pose a couple
-            of times. Stay visible on camera.
+            Liveness:{" "}
+            {endLivenessState === "passed" ? (
+              <span className="text-gold">passed</span>
+            ) : endLivenessState === "running" ? (
+              <span>checking…</span>
+            ) : endLivenessState === "failed" ? (
+              <span className="text-destructive">failed — click Stop to retry</span>
+            ) : (
+              <span>runs once when you click Stop — stay visible on camera.</span>
+            )}
           </p>
 
           <RecordingControls
@@ -933,11 +940,19 @@ function RecordPage() {
             onPause={recorder.pause}
             onResume={recorder.resume}
             onStop={handleStop}
+            stopPending={endLivenessState === "running"}
+            stopLabel={
+              endLivenessState === "running"
+                ? "Hold pose…"
+                : endLivenessState === "failed"
+                  ? "Retry & stop"
+                  : undefined
+            }
           />
         </div>
       )}
 
-      {activeChallenge && phase === "live" && (
+      {activeChallenge && (
         <LivenessOverlay
           flashHex={activeChallenge.flashHex}
           pose={activeChallenge.pose}
