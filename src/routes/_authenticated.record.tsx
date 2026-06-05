@@ -98,12 +98,19 @@ function RecordPage() {
   const [appealSent, setAppealSent] = useState(false);
 
   // ----- Anti-spoofing liveness state -----
+  // Only the end-of-recording liveness challenge runs; mid-session prompts
+  // were too disruptive and easy to miss when users are focused on their
+  // word processor.
   const [activeChallenge, setActiveChallenge] = useState<LivenessChallenge | null>(null);
   const [liveReceipts, setLiveReceipts] = useState<LivenessReceipt[]>([]);
   const [requiredNonces, setRequiredNonces] = useState<string[]>([]);
   const [livenessError, setLivenessError] = useState<string | null>(null);
-  const livenessTimerRef = useRef<number | null>(null);
-  const livenessBusyRef = useRef(false);
+  // "idle" before stop is clicked, "running" while the end challenge is on
+  // screen, "failed" after a failed attempt (user can click Stop again to
+  // retry), "passed" after success (the actual recorder.stop() then runs).
+  const [endLivenessState, setEndLivenessState] = useState<
+    "idle" | "running" | "failed" | "passed"
+  >("idle");
 
   const { data: profileData, isLoading: profileLoading } = useQuery({
     queryKey: ["my-profile"],
