@@ -39,8 +39,7 @@ export const listAllUsers = createServerFn({ method: "GET" })
           email: u.email ?? null,
           created_at: u.created_at,
           last_sign_in_at: u.last_sign_in_at ?? null,
-          // @ts-expect-error banned_until is on the admin payload
-          banned_until: u.banned_until ?? null,
+          banned_until: (u as { banned_until?: string | null }).banned_until ?? null,
           email_confirmed_at: u.email_confirmed_at ?? null,
         });
       }
