@@ -12,6 +12,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
+import { amIAdmin } from "@/lib/admin.functions";
 
 function NotFoundComponent() {
   return (
@@ -195,6 +198,7 @@ function SiteHeader() {
                 <Link to="/profile" className="px-3 py-1.5 rounded hover:bg-secondary">
                   Profile
                 </Link>
+                <AdminNavLink />
                 <button
                   onClick={signOut}
                   className="ml-2 px-3 py-1.5 rounded text-muted-foreground hover:bg-secondary"
@@ -232,5 +236,20 @@ function SiteFooter() {
         </div>
       </div>
     </footer>
+  );
+}
+
+function AdminNavLink() {
+  const fn = useServerFn(amIAdmin);
+  const { data } = useQuery({
+    queryKey: ["am-i-admin"],
+    queryFn: () => fn(),
+    staleTime: 60_000,
+  });
+  if (!data?.isAdmin) return null;
+  return (
+    <Link to="/admin" className="px-3 py-1.5 rounded hover:bg-secondary">
+      Admin
+    </Link>
   );
 }
