@@ -195,6 +195,7 @@ function SiteHeader() {
                 <Link to="/profile" className="px-3 py-1.5 rounded hover:bg-secondary">
                   Profile
                 </Link>
+                <AdminNavLink />
                 <button
                   onClick={signOut}
                   className="ml-2 px-3 py-1.5 rounded text-muted-foreground hover:bg-secondary"
