@@ -238,3 +238,18 @@ function SiteFooter() {
     </footer>
   );
 }
+
+function AdminNavLink() {
+  const fn = useServerFn(amIAdmin);
+  const { data } = useQuery({
+    queryKey: ["am-i-admin"],
+    queryFn: () => fn(),
+    staleTime: 60_000,
+  });
+  if (!data?.isAdmin) return null;
+  return (
+    <Link to="/admin" className="px-3 py-1.5 rounded hover:bg-secondary">
+      Admin
+    </Link>
+  );
+}
